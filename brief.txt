@@ -1,0 +1,55 @@
+Microscope Picam 2
+
+Vorige versie:
+https://henkrijneveld.nl/overzicht/foto-en-microscoop
+
+Nieuwe versie gebaseerd op de Picamera2 Python library.
+
+Doel:
+Headless Raspberry Pi aan de microscoop. Alleen voeding naar de Pi.
+Bediening via een webbrowser vanaf een andere computer.
+Pi Connect alleen voor onderhoud/debugging.
+
+Functie-overzicht uiteindelijk:
+- auto/manual exposure
+- exposuretijd
+- gain
+- auto/manual white balance
+- RGB gains
+- zoom/crop
+- resolutie/presets
+- live histogram
+- capture-status
+- camera connected/error
+- instellingen ophalen bij openen
+- controls tijdelijk uitschakelen tijdens capture
+- presets opslaan/laden
+- foto's lokaal op de Pi opslaan
+- filebrowser met bekijken/downloaden
+
+Techniek:
+- backend: Python
+- camera: Picamera2
+- API/webapp: FastAPI
+- HTTP server: Uvicorn
+- live camerastream vanuit dezelfde applicatie
+- dezelfde FastAPI-app serveert in productie ook de gebouwde Vue frontend
+- target: Raspberry Pi 3B of hoger met Raspberry Pi HQ Camera
+- frontend: Vue 3
+- frontend development/build: Vite
+- layout: CSS Grid / gewone CSS
+- ontwikkelomgeving: PyCharm Professional 2024 + WSL
+- camera/backend tijdens ontwikkeling draait op de Pi
+
+GitHub:
+github.com/henkrijneveld/Microscope-Picam2
+
+Workflow:
+- GitHub is de bron
+- wijzigingen via feature branches en PR's
+- niets zonder expliciete opdracht direct naar main/master
+- ik review/merge PR's en pull daarna in mijn ontwikkelomgeving
+
+Eerste doel:
+Een minimale verticale slice: Picamera2 openen, live beeld in de browser tonen
+en via een eenvoudige API camerastatus kunnen uitlezen.
