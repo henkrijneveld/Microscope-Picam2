@@ -8,6 +8,9 @@ from picamera2 import Picamera2
 from picamera2.encoders import MJPEGEncoder
 from picamera2.outputs import FileOutput
 
+from pydantic import BaseModel
+from fastapi import HTTPException
+
 
 class StreamingOutput(io.BufferedIOBase):
     def __init__(self):
@@ -23,7 +26,14 @@ class StreamingOutput(io.BufferedIOBase):
 picam2: Picamera2 | None = None
 camera_error: str | None = None
 output = StreamingOutput()
+exposure_auto = True
 
+class ExposureSettings(BaseModel):
+    auto: bool
+    exposure_time_us: int | None = None
+
+class ExposureStep(BaseModel):
+    factor: float
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -33,10 +43,14 @@ async def lifespan(app: FastAPI):
         picam2 = Picamera2()
 
         config = picam2.create_video_configuration(
-            main={"size": (640, 480)}
+            main={"size": (640, 480)},
+            controls={"FrameRate": 15},
         )
         picam2.configure(config)
 
+        picam2.set_controls({
+            "AeEnable": True,
+        })
         picam2.start_recording(
             MJPEGEncoder(),
             FileOutput(output),
@@ -126,3 +140,107 @@ def stream():
             "Pragma": "no-cache",
         },
     )
+
+@app.get("/api/exposure")
+def get_exposure():
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    metadata = picam2.capture_metadata()
+
+    exposure_min, exposure_max, exposure_default = (
+        picam2.camera_controls["ExposureTime"]
+    )
+
+
+    return {
+        "auto": exposure_auto,
+        "exposure_time_us": metadata.get("ExposureTime"),
+        "analogue_gain": metadata.get("AnalogueGain"),
+        "digital_gain": metadata.get("DigitalGain"),
+        # bestaande range...
+    }
+
+    return {
+        "auto": exposure_auto,
+        "exposure_time_us": metadata.get("ExposureTime"),
+        "range": {
+            "min_us": exposure_min,
+            "max_us": exposure_max,
+            "default_us": exposure_default,
+        },
+    }
+
+@app.put("/api/exposure")
+def set_exposure(settings: ExposureSettings):
+    global exposure_auto
+
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    controls = {
+        "AeEnable": settings.auto,
+    }
+
+    if not settings.auto and settings.exposure_time_us is not None:
+        exposure_min, exposure_max, _ = picam2.camera_controls["ExposureTime"]
+
+        if not exposure_min <= settings.exposure_time_us <= exposure_max:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Exposure time must be between {exposure_min} and {exposure_max} us",
+            )
+
+        controls["ExposureTime"] = settings.exposure_time_us
+
+    picam2.set_controls(controls)
+
+    exposure_auto = settings.auto
+
+    metadata = picam2.capture_metadata()
+
+    return {
+        "auto": exposure_auto,
+        "exposure_time_us": settings.exposure_time_us,
+    }
+
+@app.put("/api/exposure/step")
+def step_exposure(step: ExposureStep):
+    global exposure_auto
+
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    if exposure_auto:
+        raise HTTPException(
+            status_code=400,
+            detail="Exposure stepping is only available in manual mode",
+        )
+
+    metadata = picam2.capture_metadata()
+    current_exposure = metadata.get("ExposureTime")
+
+    if current_exposure is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Current exposure time unavailable",
+        )
+
+    exposure_min, exposure_max, _ = picam2.camera_controls["ExposureTime"]
+
+    new_exposure = round(current_exposure * step.factor)
+
+    new_exposure = max(
+        exposure_min,
+        min(new_exposure, exposure_max),
+    )
+
+    picam2.set_controls({
+        "ExposureTime": new_exposure,
+    })
+
+    return {
+        "auto": False,
+        "exposure_time_us": new_exposure,
+        "factor": step.factor,
+    }
