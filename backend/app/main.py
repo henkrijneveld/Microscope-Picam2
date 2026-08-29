@@ -5,12 +5,13 @@ import signal
 import unicodedata
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from threading import Condition, Event, Lock, current_thread, main_thread
 
 import piexif
 import piexif.helper
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from picamera2 import Picamera2
 from picamera2.encoders import MJPEGEncoder
 from picamera2.outputs import FileOutput
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 
 
 LIVE_SIZE = (640, 480)
+PHOTO_DIR = Path(__file__).resolve().parents[2] / "photos"
 
 
 class StreamingOutput(io.BufferedIOBase):
@@ -93,6 +95,29 @@ def sanitize_photo_name(name: str):
     return normalized[:80]
 
 
+def get_unique_photo_path(filename: str):
+    photo_path = PHOTO_DIR / filename
+    counter = 2
+
+    while photo_path.exists():
+        photo_path = PHOTO_DIR / f"{Path(filename).stem}-{counter}.jpg"
+        counter += 1
+
+    return photo_path
+
+
+def get_photo_path(filename: str):
+    if filename != Path(filename).name or Path(filename).suffix.lower() != ".jpg":
+        raise HTTPException(status_code=400, detail="Invalid photo filename")
+
+    photo_path = PHOTO_DIR / filename
+
+    if not photo_path.is_file():
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    return photo_path
+
+
 def embed_photo_metadata(jpeg_data: bytes, photo_metadata: dict, safe_name: str):
     exif_dict = piexif.load(jpeg_data)
 
@@ -153,6 +178,7 @@ def restore_shutdown_signal_handlers(previous_handlers):
 async def lifespan(app: FastAPI):
     global picam2, camera_error
 
+    PHOTO_DIR.mkdir(parents=True, exist_ok=True)
     stream_stop.clear()
     previous_signal_handlers = install_shutdown_signal_handlers()
 
@@ -301,7 +327,9 @@ def take_photo(settings: PhotoSettings):
 
     with camera_lock:
         capture_time = datetime.now()
-        filename = f"{capture_time.strftime('%y%m%d-%H%M%S')}-{safe_name}.jpg"
+        base_filename = f"{capture_time.strftime('%y%m%d-%H%M%S')}-{safe_name}.jpg"
+        photo_path = get_unique_photo_path(base_filename)
+        filename = photo_path.name
 
         metadata = picam2.capture_metadata()
         current_exposure = metadata.get("ExposureTime")
@@ -376,6 +404,7 @@ def take_photo(settings: PhotoSettings):
                 photo_metadata,
                 safe_name,
             )
+            photo_path.write_bytes(photo_data)
         finally:
             frame_duration_us = round(1_000_000 / frame_rate)
 
@@ -401,14 +430,40 @@ def take_photo(settings: PhotoSettings):
             picam2.set_controls(restore_controls)
             start_stream_encoder()
 
-        return Response(
-            content=photo_data,
-            media_type="image/jpeg",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
-                "Cache-Control": "no-store",
-            },
-        )
+        return {
+            "filename": filename,
+            "size_bytes": len(photo_data),
+        }
+
+
+@app.get("/api/files")
+def list_files():
+    PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+
+    files = []
+    for photo_path in sorted(PHOTO_DIR.glob("*.jpg"), reverse=True):
+        stat = photo_path.stat()
+        files.append({
+            "name": photo_path.name,
+            "size_bytes": stat.st_size,
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+        })
+
+    return {
+        "directory": str(PHOTO_DIR),
+        "files": files,
+    }
+
+
+@app.get("/api/files/{filename}")
+def download_file(filename: str):
+    photo_path = get_photo_path(filename)
+
+    return FileResponse(
+        path=photo_path,
+        media_type="image/jpeg",
+        filename=photo_path.name,
+    )
 
 
 @app.get("/api/framerate")
