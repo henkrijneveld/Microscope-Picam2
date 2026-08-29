@@ -5,12 +5,22 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+ENV_FILE="frontend/.env.local"
+
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
 PI_HOST="${1:-${PI_HOST:-}}"
 DEPLOY_DIR="${DEPLOY_DIR:-Deploy/Microscope-Picam2}"
 
 if [ -z "$PI_HOST" ]; then
-  echo "Gebruik: ./deploy.sh <pi-host>" >&2
-  echo "of zet PI_HOST, bijvoorbeeld: export PI_HOST=Raspi3B-1.local" >&2
+  echo "PI_HOST ontbreekt." >&2
+  echo "Zet bijvoorbeeld PI_HOST=Raspi3B-1.local in $ENV_FILE" >&2
+  echo "of gebruik: ./deploy.sh <pi-host>" >&2
   exit 1
 fi
 
