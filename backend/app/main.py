@@ -44,8 +44,11 @@ camera_error: str | None = None
 output = StreamingOutput()
 stream_stop = Event()
 camera_lock = Lock()
+metadata_lock = Lock()
+latest_metadata: dict = {}
 exposure_auto = True
 exposure_value = 0.0
+manual_exposure_time_us: int | None = None
 frame_rate = 15
 white_balance_auto = True
 white_balance_gains: tuple[float, float] | None = None
@@ -87,6 +90,20 @@ def start_stream_encoder():
         MJPEGEncoder(),
         FileOutput(output),
     )
+
+
+def cache_camera_metadata(request):
+    global latest_metadata
+
+    metadata = request.get_metadata()
+
+    with metadata_lock:
+        latest_metadata = metadata
+
+
+def get_latest_metadata():
+    with metadata_lock:
+        return latest_metadata.copy()
 
 
 def sanitize_photo_name(name: str):
@@ -180,14 +197,19 @@ def restore_shutdown_signal_handlers(previous_handlers):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global picam2, camera_error
+    global picam2, camera_error, latest_metadata
 
     PHOTO_DIR.mkdir(parents=True, exist_ok=True)
     stream_stop.clear()
+
+    with metadata_lock:
+        latest_metadata = {}
+
     previous_signal_handlers = install_shutdown_signal_handlers()
 
     try:
         picam2 = Picamera2()
+        picam2.post_callback = cache_camera_metadata
 
         config = picam2.create_video_configuration(
             main={"size": LIVE_SIZE},
@@ -298,8 +320,6 @@ def stream():
 
 @app.post("/api/photo")
 def take_photo(settings: PhotoSettings):
-    global frame_rate
-
     if picam2 is None:
         raise HTTPException(status_code=503, detail="Camera not available")
 
@@ -318,7 +338,11 @@ def take_photo(settings: PhotoSettings):
         photo_path = get_unique_photo_path(base_filename)
         filename = photo_path.name
 
-        metadata = picam2.capture_metadata()
+        metadata = get_latest_metadata()
+
+        if not metadata:
+            metadata = picam2.capture_metadata()
+
         current_exposure = metadata.get("ExposureTime")
         current_colour_gains = metadata.get("ColourGains")
 
@@ -328,6 +352,8 @@ def take_photo(settings: PhotoSettings):
 
         if exposure_auto:
             still_controls["ExposureValue"] = exposure_value
+        elif manual_exposure_time_us is not None:
+            still_controls["ExposureTime"] = manual_exposure_time_us
         elif current_exposure is not None:
             still_controls["ExposureTime"] = current_exposure
 
@@ -405,6 +431,8 @@ def take_photo(settings: PhotoSettings):
 
             if exposure_auto:
                 restore_controls["ExposureValue"] = exposure_value
+            elif manual_exposure_time_us is not None:
+                restore_controls["ExposureTime"] = manual_exposure_time_us
             elif current_exposure is not None:
                 restore_controls["ExposureTime"] = current_exposure
 
@@ -458,17 +486,9 @@ def get_framerate():
     if picam2 is None:
         raise HTTPException(status_code=503, detail="Camera not available")
 
-    with camera_lock:
-        metadata = picam2.capture_metadata()
-        frame_duration_us = metadata.get("FrameDuration")
-
-    fps = None
-    if frame_duration_us:
-        fps = round(1_000_000 / frame_duration_us)
-
     return {
-        "fps": fps,
-        "frame_duration_us": frame_duration_us,
+        "fps": frame_rate,
+        "frame_duration_us": round(1_000_000 / frame_rate),
         "options": sorted(ALLOWED_FRAME_RATES, reverse=True),
     }
 
@@ -506,13 +526,16 @@ def get_exposure():
     if picam2 is None:
         raise HTTPException(status_code=503, detail="Camera not available")
 
-    with camera_lock:
-        metadata = picam2.capture_metadata()
+    metadata = get_latest_metadata()
+
+    exposure_time_us = metadata.get("ExposureTime")
+    if not exposure_auto and manual_exposure_time_us is not None:
+        exposure_time_us = manual_exposure_time_us
 
     return {
         "auto": exposure_auto,
         "exposure_value": exposure_value,
-        "exposure_time_us": metadata.get("ExposureTime"),
+        "exposure_time_us": exposure_time_us,
         "analogue_gain": metadata.get("AnalogueGain"),
         "digital_gain": metadata.get("DigitalGain"),
     }
@@ -520,7 +543,7 @@ def get_exposure():
 
 @app.put("/api/exposure")
 def set_exposure(settings: ExposureSettings):
-    global exposure_auto
+    global exposure_auto, manual_exposure_time_us
 
     if picam2 is None:
         raise HTTPException(status_code=503, detail="Camera not available")
@@ -546,10 +569,17 @@ def set_exposure(settings: ExposureSettings):
         picam2.set_controls(controls)
         exposure_auto = settings.auto
 
+        if not settings.auto and settings.exposure_time_us is not None:
+            manual_exposure_time_us = settings.exposure_time_us
+
     return {
         "auto": exposure_auto,
         "exposure_value": exposure_value,
-        "exposure_time_us": settings.exposure_time_us,
+        "exposure_time_us": (
+            manual_exposure_time_us
+            if not exposure_auto
+            else settings.exposure_time_us
+        ),
     }
 
 
@@ -586,7 +616,7 @@ def set_exposure_value(settings: ExposureValueSettings):
 
 @app.put("/api/exposure/step")
 def step_exposure(step: ExposureStep):
-    global exposure_auto
+    global manual_exposure_time_us
 
     if picam2 is None:
         raise HTTPException(status_code=503, detail="Camera not available")
@@ -597,28 +627,30 @@ def step_exposure(step: ExposureStep):
             detail="Exposure stepping is only available in manual mode",
         )
 
-    with camera_lock:
-        metadata = picam2.capture_metadata()
-        current_exposure = metadata.get("ExposureTime")
+    current_exposure = manual_exposure_time_us
 
-        if current_exposure is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Current exposure time unavailable",
-            )
+    if current_exposure is None:
+        current_exposure = get_latest_metadata().get("ExposureTime")
 
-        exposure_min, exposure_max, _ = picam2.camera_controls["ExposureTime"]
-
-        new_exposure = round(current_exposure * step.factor)
-
-        new_exposure = max(
-            exposure_min,
-            min(new_exposure, exposure_max),
+    if current_exposure is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Current exposure time unavailable",
         )
 
+    exposure_min, exposure_max, _ = picam2.camera_controls["ExposureTime"]
+
+    new_exposure = round(current_exposure * step.factor)
+    new_exposure = max(
+        exposure_min,
+        min(new_exposure, exposure_max),
+    )
+
+    with camera_lock:
         picam2.set_controls({
             "ExposureTime": new_exposure,
         })
+        manual_exposure_time_us = new_exposure
 
     return {
         "auto": False,
@@ -632,9 +664,7 @@ def get_white_balance():
     if picam2 is None:
         raise HTTPException(status_code=503, detail="Camera not available")
 
-    with camera_lock:
-        metadata = picam2.capture_metadata()
-
+    metadata = get_latest_metadata()
     colour_gains = metadata.get("ColourGains")
 
     return {
