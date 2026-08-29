@@ -4,4 +4,5 @@ set -e
 
 exec .venv/bin/uvicorn backend.app.main:app \
   --host 0.0.0.0 \
-  --port 8000
+  --port 8000 \
+  --timeout-graceful-shutdown 2
