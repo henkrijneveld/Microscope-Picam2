@@ -41,6 +41,8 @@ camera_lock = Lock()
 exposure_auto = True
 exposure_value = 0.0
 frame_rate = 15
+white_balance_auto = True
+white_balance_gains: tuple[float, float] | None = None
 
 ALLOWED_FRAME_RATES = {1, 5, 15}
 ALLOWED_EXPOSURE_VALUES = {-1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0}
@@ -65,6 +67,10 @@ class FrameRateSettings(BaseModel):
 
 class PhotoSettings(BaseModel):
     name: str
+
+
+class WhiteBalanceSettings(BaseModel):
+    auto: bool
 
 
 def start_stream_encoder():
@@ -162,6 +168,7 @@ async def lifespan(app: FastAPI):
         picam2.set_controls({
             "AeEnable": True,
             "ExposureValue": exposure_value,
+            "AwbEnable": True,
         })
         picam2.start()
         start_stream_encoder()
@@ -298,6 +305,7 @@ def take_photo(settings: PhotoSettings):
 
         metadata = picam2.capture_metadata()
         current_exposure = metadata.get("ExposureTime")
+        current_colour_gains = metadata.get("ColourGains")
 
         still_controls = {
             "AeEnable": exposure_auto,
@@ -307,6 +315,17 @@ def take_photo(settings: PhotoSettings):
             still_controls["ExposureValue"] = exposure_value
         elif current_exposure is not None:
             still_controls["ExposureTime"] = current_exposure
+
+        # Freeze the current live-view white balance for the still image. This
+        # prevents a mode switch from starting a fresh AWB calculation.
+        if white_balance_auto and current_colour_gains is not None:
+            still_controls["AwbEnable"] = False
+            still_controls["ColourGains"] = tuple(current_colour_gains)
+        elif not white_balance_auto and white_balance_gains is not None:
+            still_controls["AwbEnable"] = False
+            still_controls["ColourGains"] = white_balance_gains
+        else:
+            still_controls["AwbEnable"] = True
 
         still_config = picam2.create_still_configuration(
             controls=still_controls,
@@ -323,6 +342,8 @@ def take_photo(settings: PhotoSettings):
                 format="jpeg",
             )
 
+            active_colour_gains = captured_metadata.get("ColourGains")
+
             photo_metadata = {
                 "microscope_picam2": {
                     "name": requested_name,
@@ -335,6 +356,17 @@ def take_photo(settings: PhotoSettings):
                     "frame_rate_fps": frame_rate,
                     "exposure_auto": exposure_auto,
                     "exposure_value_ev": exposure_value if exposure_auto else None,
+                    "white_balance_mode": "auto" if white_balance_auto else "single_shot",
+                    "white_balance_red_gain": (
+                        active_colour_gains[0]
+                        if active_colour_gains is not None
+                        else None
+                    ),
+                    "white_balance_blue_gain": (
+                        active_colour_gains[1]
+                        if active_colour_gains is not None
+                        else None
+                    ),
                 },
                 "camera_metadata": captured_metadata,
             }
@@ -359,6 +391,12 @@ def take_photo(settings: PhotoSettings):
                 restore_controls["ExposureValue"] = exposure_value
             elif current_exposure is not None:
                 restore_controls["ExposureTime"] = current_exposure
+
+            if white_balance_auto:
+                restore_controls["AwbEnable"] = True
+            elif white_balance_gains is not None:
+                restore_controls["AwbEnable"] = False
+                restore_controls["ColourGains"] = white_balance_gains
 
             picam2.set_controls(restore_controls)
             start_stream_encoder()
@@ -544,4 +582,126 @@ def step_exposure(step: ExposureStep):
         "auto": False,
         "exposure_time_us": new_exposure,
         "factor": step.factor,
+    }
+
+
+@app.get("/api/whitebalance")
+def get_white_balance():
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    with camera_lock:
+        metadata = picam2.capture_metadata()
+
+    colour_gains = metadata.get("ColourGains")
+
+    return {
+        "auto": white_balance_auto,
+        "mode": "auto" if white_balance_auto else "single_shot",
+        "red_gain": colour_gains[0] if colour_gains is not None else None,
+        "blue_gain": colour_gains[1] if colour_gains is not None else None,
+        "colour_temperature": metadata.get("ColourTemperature"),
+        "locked": metadata.get("AwbLocked"),
+    }
+
+
+@app.put("/api/whitebalance")
+def set_white_balance(settings: WhiteBalanceSettings):
+    global white_balance_auto, white_balance_gains
+
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    if not settings.auto:
+        raise HTTPException(
+            status_code=400,
+            detail="Use single-shot white balance to set a fixed white balance",
+        )
+
+    with camera_lock:
+        picam2.set_controls({
+            "AwbEnable": True,
+        })
+        white_balance_auto = True
+        white_balance_gains = None
+
+    return {
+        "auto": True,
+        "mode": "auto",
+    }
+
+
+@app.post("/api/whitebalance/single")
+def set_single_shot_white_balance():
+    global white_balance_auto, white_balance_gains
+
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    with camera_lock:
+        picam2.set_controls({
+            "AwbEnable": True,
+        })
+
+        previous_gains = None
+        stable_frames = 0
+        selected_gains = None
+        selected_metadata = None
+
+        # Prefer AwbLocked when the platform reports it. The stability fallback
+        # also makes this usable on pipelines that do not expose AwbLocked.
+        for _ in range(8):
+            metadata = picam2.capture_metadata()
+            colour_gains = metadata.get("ColourGains")
+
+            if colour_gains is None:
+                continue
+
+            gains = (float(colour_gains[0]), float(colour_gains[1]))
+            selected_gains = gains
+            selected_metadata = metadata
+
+            if metadata.get("AwbLocked") is True:
+                break
+
+            if previous_gains is not None:
+                red_delta = abs(gains[0] - previous_gains[0])
+                blue_delta = abs(gains[1] - previous_gains[1])
+                red_limit = max(0.01, abs(gains[0]) * 0.01)
+                blue_limit = max(0.01, abs(gains[1]) * 0.01)
+
+                if red_delta <= red_limit and blue_delta <= blue_limit:
+                    stable_frames += 1
+                else:
+                    stable_frames = 0
+
+                if stable_frames >= 2:
+                    break
+
+            previous_gains = gains
+
+        if selected_gains is None:
+            raise HTTPException(
+                status_code=500,
+                detail="White balance gains unavailable",
+            )
+
+        picam2.set_controls({
+            "AwbEnable": False,
+            "ColourGains": selected_gains,
+        })
+
+        white_balance_auto = False
+        white_balance_gains = selected_gains
+
+    return {
+        "auto": False,
+        "mode": "single_shot",
+        "red_gain": selected_gains[0],
+        "blue_gain": selected_gains[1],
+        "colour_temperature": (
+            selected_metadata.get("ColourTemperature")
+            if selected_metadata is not None
+            else None
+        ),
     }
