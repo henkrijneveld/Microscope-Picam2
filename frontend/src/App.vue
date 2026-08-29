@@ -6,6 +6,8 @@ const error = ref(null)
 
 const exposure = ref(null)
 const framerate = ref(null)
+const photoBusy = ref(false)
+const photoError = ref(null)
 
 let exposureTimer = null
 
@@ -29,6 +31,39 @@ function formatDigitalGain(gain) {
   return Number(gain).toFixed(1)
 }
 
+async function takePhoto() {
+  photoBusy.value = true
+  photoError.value = null
+
+  try {
+    const response = await fetch('/api/photo', {
+      method: 'POST',
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+
+    link.href = url
+    link.download = 'microscope.jpg'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+
+    URL.revokeObjectURL(url)
+  } catch (exc) {
+    photoError.value = exc.message
+  } finally {
+    photoBusy.value = false
+    await loadExposure()
+    await loadFramerate()
+  }
+}
+
 async function stepExposure(factor) {
   const response = await fetch('/api/exposure/step', {
     method: 'PUT',
@@ -46,6 +81,10 @@ async function stepExposure(factor) {
 }
 
 async function loadExposure() {
+  if (photoBusy.value) {
+    return
+  }
+
   const response = await fetch('/api/exposure')
 
   if (!response.ok) {
@@ -219,6 +258,21 @@ onUnmounted(() => {
         Exposure: {{ formatExposureTime(exposure.exposure_time_us) }}<br>
         Analogue gain: {{ formatDigitalGain(exposure.analogue_gain) }}<br>
         Digital gain: {{ formatDigitalGain(exposure.digital_gain) }}
+      </p>
+    </section>
+
+    <section>
+      <h2>Foto</h2>
+
+      <button
+        :disabled="photoBusy"
+        @click="takePhoto"
+      >
+        {{ photoBusy ? 'Foto maken...' : 'Foto nemen' }}
+      </button>
+
+      <p v-if="photoError">
+        Fout bij foto: {{ photoError }}
       </p>
     </section>
 
