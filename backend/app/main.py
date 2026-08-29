@@ -30,9 +30,11 @@ output = StreamingOutput()
 stream_stop = Event()
 camera_lock = Lock()
 exposure_auto = True
+exposure_value = 0.0
 frame_rate = 15
 
 ALLOWED_FRAME_RATES = {1, 5, 15}
+ALLOWED_EXPOSURE_VALUES = {-1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0}
 
 
 class ExposureSettings(BaseModel):
@@ -42,6 +44,10 @@ class ExposureSettings(BaseModel):
 
 class ExposureStep(BaseModel):
     factor: float
+
+
+class ExposureValueSettings(BaseModel):
+    value: float
 
 
 class FrameRateSettings(BaseModel):
@@ -111,6 +117,7 @@ async def lifespan(app: FastAPI):
 
         picam2.set_controls({
             "AeEnable": True,
+            "ExposureValue": exposure_value,
         })
         picam2.start()
         start_stream_encoder()
@@ -240,7 +247,9 @@ def take_photo():
             "AeEnable": exposure_auto,
         }
 
-        if not exposure_auto and current_exposure is not None:
+        if exposure_auto:
+            still_controls["ExposureValue"] = exposure_value
+        elif current_exposure is not None:
             still_controls["ExposureTime"] = current_exposure
 
         still_config = picam2.create_still_configuration(
@@ -268,7 +277,9 @@ def take_photo():
                 ),
             }
 
-            if not exposure_auto and current_exposure is not None:
+            if exposure_auto:
+                restore_controls["ExposureValue"] = exposure_value
+            elif current_exposure is not None:
                 restore_controls["ExposureTime"] = current_exposure
 
             picam2.set_controls(restore_controls)
@@ -342,6 +353,7 @@ def get_exposure():
 
     return {
         "auto": exposure_auto,
+        "exposure_value": exposure_value,
         "exposure_time_us": metadata.get("ExposureTime"),
         "analogue_gain": metadata.get("AnalogueGain"),
         "digital_gain": metadata.get("DigitalGain"),
@@ -359,7 +371,9 @@ def set_exposure(settings: ExposureSettings):
         "AeEnable": settings.auto,
     }
 
-    if not settings.auto and settings.exposure_time_us is not None:
+    if settings.auto:
+        controls["ExposureValue"] = exposure_value
+    elif settings.exposure_time_us is not None:
         exposure_min, exposure_max, _ = picam2.camera_controls["ExposureTime"]
 
         if not exposure_min <= settings.exposure_time_us <= exposure_max:
@@ -376,7 +390,39 @@ def set_exposure(settings: ExposureSettings):
 
     return {
         "auto": exposure_auto,
+        "exposure_value": exposure_value,
         "exposure_time_us": settings.exposure_time_us,
+    }
+
+
+@app.put("/api/exposure/value")
+def set_exposure_value(settings: ExposureValueSettings):
+    global exposure_value
+
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    if not exposure_auto:
+        raise HTTPException(
+            status_code=400,
+            detail="Exposure compensation is only available in auto mode",
+        )
+
+    if settings.value not in ALLOWED_EXPOSURE_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail="Exposure value must be -1, -0.5, -0.25, 0, 0.25, 0.5 or 1",
+        )
+
+    with camera_lock:
+        picam2.set_controls({
+            "ExposureValue": settings.value,
+        })
+        exposure_value = settings.value
+
+    return {
+        "auto": True,
+        "exposure_value": exposure_value,
     }
 
 
