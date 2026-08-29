@@ -1,6 +1,8 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 
+const currentPage = ref(window.location.hash === '#files' ? 'files' : 'camera')
+
 const status = ref(null)
 const error = ref(null)
 
@@ -12,6 +14,12 @@ const whiteBalanceError = ref(null)
 const photoBusy = ref(false)
 const photoError = ref(null)
 const photoName = ref('microscope')
+const lastSavedFile = ref(null)
+
+const files = ref([])
+const filesDirectory = ref(null)
+const filesBusy = ref(false)
+const filesError = ref(null)
 
 const exposureValues = [
   { value: -1, label: '-1' },
@@ -54,16 +62,48 @@ function formatColourGain(gain) {
   return Number(gain).toFixed(2)
 }
 
-function getDownloadFilename(response) {
-  const contentDisposition = response.headers.get('Content-Disposition')
-  const match = contentDisposition?.match(/filename="([^"]+)"/)
+function formatFileSize(sizeBytes) {
+  if (sizeBytes < 1024 * 1024) {
+    return `${Math.round(sizeBytes / 1024)} kB`
+  }
 
-  return match?.[1] ?? 'microscope.jpg'
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function fileDownloadUrl(filename) {
+  return `/api/files/${encodeURIComponent(filename)}`
+}
+
+function showPage(page) {
+  window.location.hash = page === 'files' ? 'files' : ''
+}
+
+function startCameraPolling() {
+  if (!exposureTimer) {
+    exposureTimer = setInterval(loadExposure, 500)
+  }
+
+  if (!whiteBalanceTimer) {
+    whiteBalanceTimer = setInterval(loadWhiteBalance, 1000)
+  }
+}
+
+function stopCameraPolling() {
+  if (exposureTimer) {
+    clearInterval(exposureTimer)
+    exposureTimer = null
+  }
+
+  if (whiteBalanceTimer) {
+    clearInterval(whiteBalanceTimer)
+    whiteBalanceTimer = null
+  }
 }
 
 async function takePhoto() {
   photoBusy.value = true
   photoError.value = null
+  lastSavedFile.value = null
 
   try {
     const response = await fetch('/api/photo', {
@@ -80,18 +120,8 @@ async function takePhoto() {
       throw new Error(`HTTP ${response.status}`)
     }
 
-    const filename = getDownloadFilename(response)
-    const blob = await response.blob()
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-
-    link.href = url
-    link.download = filename
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-
-    URL.revokeObjectURL(url)
+    const result = await response.json()
+    lastSavedFile.value = result.filename
   } catch (exc) {
     photoError.value = exc.message
   } finally {
@@ -135,7 +165,7 @@ async function stepExposure(factor) {
 }
 
 async function loadExposure() {
-  if (photoBusy.value) {
+  if (currentPage.value !== 'camera' || photoBusy.value || !status.value?.camera?.connected) {
     return
   }
 
@@ -149,6 +179,10 @@ async function loadExposure() {
 }
 
 async function loadFramerate() {
+  if (currentPage.value !== 'camera' || !status.value?.camera?.connected) {
+    return
+  }
+
   const response = await fetch('/api/framerate')
 
   if (!response.ok) {
@@ -159,7 +193,12 @@ async function loadFramerate() {
 }
 
 async function loadWhiteBalance() {
-  if (photoBusy.value || whiteBalanceBusy.value) {
+  if (
+    currentPage.value !== 'camera'
+    || photoBusy.value
+    || whiteBalanceBusy.value
+    || !status.value?.camera?.connected
+  ) {
     return
   }
 
@@ -170,6 +209,27 @@ async function loadWhiteBalance() {
   }
 
   whiteBalance.value = await response.json()
+}
+
+async function loadFiles() {
+  filesBusy.value = true
+  filesError.value = null
+
+  try {
+    const response = await fetch('/api/files')
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    const result = await response.json()
+    files.value = result.files
+    filesDirectory.value = result.directory
+  } catch (exc) {
+    filesError.value = exc.message
+  } finally {
+    filesBusy.value = false
+  }
 }
 
 async function setWhiteBalanceAuto() {
@@ -260,7 +320,9 @@ async function setExposureAuto(auto) {
   await loadExposure()
 }
 
-onMounted(async () => {
+async function loadCameraPage() {
+  error.value = null
+
   try {
     const response = await fetch('/api/status')
 
@@ -270,25 +332,37 @@ onMounted(async () => {
 
     status.value = await response.json()
 
-    await loadExposure()
-    await loadFramerate()
-    await loadWhiteBalance()
-
-    exposureTimer = setInterval(loadExposure, 500)
-    whiteBalanceTimer = setInterval(loadWhiteBalance, 1000)
+    if (status.value.camera.connected) {
+      await loadExposure()
+      await loadFramerate()
+      await loadWhiteBalance()
+      startCameraPolling()
+    }
   } catch (exc) {
     error.value = exc.message
   }
+}
+
+async function handlePageChange() {
+  currentPage.value = window.location.hash === '#files' ? 'files' : 'camera'
+
+  if (currentPage.value === 'files') {
+    stopCameraPolling()
+    await loadFiles()
+    return
+  }
+
+  await loadCameraPage()
+}
+
+onMounted(async () => {
+  window.addEventListener('hashchange', handlePageChange)
+  await handlePageChange()
 })
 
 onUnmounted(() => {
-  if (exposureTimer) {
-    clearInterval(exposureTimer)
-  }
-
-  if (whiteBalanceTimer) {
-    clearInterval(whiteBalanceTimer)
-  }
+  window.removeEventListener('hashchange', handlePageChange)
+  stopCameraPolling()
 })
 </script>
 
@@ -296,161 +370,235 @@ onUnmounted(() => {
   <main>
     <h1>Microscope Picam2</h1>
 
-    <p v-if="error">
-      Fout: {{ error }}
-    </p>
-
-    <div v-else-if="status">
-      <p>Status: {{ status.status }}</p>
-      <p>Camera connected: {{ status.camera.connected }}</p>
-      <p>Model: {{ status.camera.model }}</p>
-    </div>
-
-    <p v-else>
-      Camerastatus ophalen...
-    </p>
-
-    <section v-if="framerate">
-      <h2>Frame rate</h2>
-
+    <nav>
       <button
-        v-for="fps in framerate.options"
-        :key="fps"
-        :disabled="framerate.fps === fps"
-        @click="setFramerate(fps)"
+        :disabled="currentPage === 'camera'"
+        @click="showPage('camera')"
       >
-        {{ fps }} fps
+        Camera
       </button>
 
-      <p>
-        Huidig: {{ framerate.fps }} fps
+      <button
+        :disabled="currentPage === 'files'"
+        @click="showPage('files')"
+      >
+        Bestanden
+      </button>
+    </nav>
+
+    <template v-if="currentPage === 'camera'">
+      <p v-if="error">
+        Fout: {{ error }}
       </p>
-    </section>
 
-    <section v-if="exposure">
-      <h2>Exposure</h2>
-
-      <button
-        :disabled="exposure.auto"
-        @click="setExposureAuto(true)"
-      >
-        Auto
-      </button>
-
-      <button
-        :disabled="!exposure.auto"
-        @click="setExposureAuto(false)"
-      >
-        Manual
-      </button>
-
-      <div>
-        <button
-          v-for="item in exposureValues"
-          :key="item.value"
-          :disabled="!exposure.auto || exposure.exposure_value === item.value"
-          @click="setExposureValue(item.value)"
-        >
-          {{ item.label }}
-        </button>
+      <div v-else-if="status">
+        <p>Status: {{ status.status }}</p>
+        <p>Camera connected: {{ status.camera.connected }}</p>
+        <p>Model: {{ status.camera.model }}</p>
       </div>
 
-      <div>
-        <button
-          :disabled="exposure.auto"
-          @click="stepExposure(1 / 4)"
-        >
-          1/4
-        </button>
-
-        <button
-          :disabled="exposure.auto"
-          @click="stepExposure(1 / 2)"
-        >
-          1/2
-        </button>
-
-        <button
-          :disabled="exposure.auto"
-          @click="stepExposure(2)"
-        >
-          2×
-        </button>
-
-        <button
-          :disabled="exposure.auto"
-          @click="stepExposure(4)"
-        >
-          4×
-        </button>
-      </div>
-
-      <p>
-        Exposure: {{ formatExposureTime(exposure.exposure_time_us) }}<br>
-        Analogue gain: {{ formatDigitalGain(exposure.analogue_gain) }}<br>
-        Digital gain: {{ formatDigitalGain(exposure.digital_gain) }}
+      <p v-else>
+        Camerastatus ophalen...
       </p>
-    </section>
 
-    <section v-if="whiteBalance">
-      <h2>White balance</h2>
+      <section v-if="framerate">
+        <h2>Frame rate</h2>
 
-      <button
-        :disabled="whiteBalanceBusy || whiteBalance.auto"
-        @click="setWhiteBalanceAuto"
+        <button
+          v-for="fps in framerate.options"
+          :key="fps"
+          :disabled="framerate.fps === fps"
+          @click="setFramerate(fps)"
+        >
+          {{ fps }} fps
+        </button>
+
+        <p>
+          Huidig: {{ framerate.fps }} fps
+        </p>
+      </section>
+
+      <section v-if="exposure">
+        <h2>Exposure</h2>
+
+        <button
+          :disabled="exposure.auto"
+          @click="setExposureAuto(true)"
+        >
+          Auto
+        </button>
+
+        <button
+          :disabled="!exposure.auto"
+          @click="setExposureAuto(false)"
+        >
+          Manual
+        </button>
+
+        <div>
+          <button
+            v-for="item in exposureValues"
+            :key="item.value"
+            :disabled="!exposure.auto || exposure.exposure_value === item.value"
+            @click="setExposureValue(item.value)"
+          >
+            {{ item.label }}
+          </button>
+        </div>
+
+        <div>
+          <button
+            :disabled="exposure.auto"
+            @click="stepExposure(1 / 4)"
+          >
+            1/4
+          </button>
+
+          <button
+            :disabled="exposure.auto"
+            @click="stepExposure(1 / 2)"
+          >
+            1/2
+          </button>
+
+          <button
+            :disabled="exposure.auto"
+            @click="stepExposure(2)"
+          >
+            2×
+          </button>
+
+          <button
+            :disabled="exposure.auto"
+            @click="stepExposure(4)"
+          >
+            4×
+          </button>
+        </div>
+
+        <p>
+          Exposure: {{ formatExposureTime(exposure.exposure_time_us) }}<br>
+          Analogue gain: {{ formatDigitalGain(exposure.analogue_gain) }}<br>
+          Digital gain: {{ formatDigitalGain(exposure.digital_gain) }}
+        </p>
+      </section>
+
+      <section v-if="whiteBalance">
+        <h2>White balance</h2>
+
+        <button
+          :disabled="whiteBalanceBusy || whiteBalance.auto"
+          @click="setWhiteBalanceAuto"
+        >
+          Auto
+        </button>
+
+        <button
+          :disabled="whiteBalanceBusy"
+          @click="setWhiteBalanceSingle"
+        >
+          {{ whiteBalanceBusy ? 'Witbalans meten...' : 'Set white balance' }}
+        </button>
+
+        <p>
+          Mode: {{ whiteBalance.auto ? 'Auto' : 'Single shot' }}<br>
+          Red gain: {{ formatColourGain(whiteBalance.red_gain) }}<br>
+          Blue gain: {{ formatColourGain(whiteBalance.blue_gain) }}<br>
+          Colour temperature:
+          {{ whiteBalance.colour_temperature == null ? '—' : `${whiteBalance.colour_temperature} K` }}
+        </p>
+
+        <p v-if="whiteBalanceError">
+          Fout bij witbalans: {{ whiteBalanceError }}
+        </p>
+      </section>
+
+      <section>
+        <h2>Foto</h2>
+
+        <label>
+          Naam:
+          <input
+            v-model="photoName"
+            :disabled="photoBusy"
+            type="text"
+          >
+        </label>
+
+        <div>
+          <button
+            :disabled="photoBusy || !photoName.trim()"
+            @click="takePhoto"
+          >
+            {{ photoBusy ? 'Foto maken...' : 'Foto nemen' }}
+          </button>
+        </div>
+
+        <p v-if="lastSavedFile">
+          Opgeslagen op de Pi: {{ lastSavedFile }}
+        </p>
+
+        <p v-if="photoError">
+          Fout bij foto: {{ photoError }}
+        </p>
+      </section>
+
+      <img
+        :src="'/api/stream'"
+        alt="Live camerabeeld"
       >
-        Auto
-      </button>
+    </template>
 
-      <button
-        :disabled="whiteBalanceBusy"
-        @click="setWhiteBalanceSingle"
-      >
-        {{ whiteBalanceBusy ? 'Witbalans meten...' : 'Set white balance' }}
-      </button>
+    <template v-else>
+      <section>
+        <h2>Bestanden</h2>
 
-      <p>
-        Mode: {{ whiteBalance.auto ? 'Auto' : 'Single shot' }}<br>
-        Red gain: {{ formatColourGain(whiteBalance.red_gain) }}<br>
-        Blue gain: {{ formatColourGain(whiteBalance.blue_gain) }}<br>
-        Colour temperature:
-        {{ whiteBalance.colour_temperature == null ? '—' : `${whiteBalance.colour_temperature} K` }}
-      </p>
-
-      <p v-if="whiteBalanceError">
-        Fout bij witbalans: {{ whiteBalanceError }}
-      </p>
-    </section>
-
-    <section>
-      <h2>Foto</h2>
-
-      <label>
-        Naam:
-        <input
-          v-model="photoName"
-          :disabled="photoBusy"
-          type="text"
-        >
-      </label>
-
-      <div>
         <button
-          :disabled="photoBusy || !photoName.trim()"
-          @click="takePhoto"
+          :disabled="filesBusy"
+          @click="loadFiles"
         >
-          {{ photoBusy ? 'Foto maken...' : 'Foto nemen' }}
+          {{ filesBusy ? 'Verversen...' : 'Verversen' }}
         </button>
-      </div>
 
-      <p v-if="photoError">
-        Fout bij foto: {{ photoError }}
-      </p>
-    </section>
+        <p v-if="filesDirectory">
+          Map op Pi: {{ filesDirectory }}
+        </p>
 
-    <img
-      :src="'/api/stream'"
-      alt="Live camerabeeld"
-    >
+        <p v-if="filesError">
+          Fout bij bestanden: {{ filesError }}
+        </p>
+
+        <p v-else-if="!filesBusy && files.length === 0">
+          Nog geen foto's opgeslagen.
+        </p>
+
+        <table v-else-if="files.length > 0">
+          <thead>
+            <tr>
+              <th>Bestand</th>
+              <th>Grootte</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="file in files"
+              :key="file.name"
+            >
+              <td>{{ file.name }}</td>
+              <td>{{ formatFileSize(file.size_bytes) }}</td>
+              <td>
+                <a
+                  :href="fileDownloadUrl(file.name)"
+                  :download="file.name"
+                >
+                  Download
+                </a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </template>
   </main>
 </template>
