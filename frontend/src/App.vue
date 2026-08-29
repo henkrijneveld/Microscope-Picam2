@@ -102,15 +102,14 @@ function stopCameraPolling() {
   }
 }
 
-async function runCameraControl(action, refresh) {
+async function runCameraControl(action) {
   cameraControlVersion += 1
   cameraControlBusy.value = true
 
   try {
-    await action()
+    return await action()
   } finally {
     cameraControlBusy.value = false
-    await refresh()
   }
 }
 
@@ -147,7 +146,7 @@ async function takePhoto() {
 }
 
 async function setExposureValue(value) {
-  await runCameraControl(async () => {
+  const result = await runCameraControl(async () => {
     const response = await fetch('/api/exposure/value', {
       method: 'PUT',
       headers: {
@@ -159,11 +158,18 @@ async function setExposureValue(value) {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
-  }, loadExposure)
+
+    return response.json()
+  })
+
+  exposure.value = {
+    ...exposure.value,
+    ...result,
+  }
 }
 
 async function stepExposure(factor) {
-  await runCameraControl(async () => {
+  const result = await runCameraControl(async () => {
     const response = await fetch('/api/exposure/step', {
       method: 'PUT',
       headers: {
@@ -175,7 +181,14 @@ async function stepExposure(factor) {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
-  }, loadExposure)
+
+    return response.json()
+  })
+
+  exposure.value = {
+    ...exposure.value,
+    ...result,
+  }
 }
 
 async function loadExposure() {
@@ -217,20 +230,13 @@ async function loadFramerate() {
     return
   }
 
-  const requestVersion = cameraControlVersion
   const response = await fetch('/api/framerate')
 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
   }
 
-  const result = await response.json()
-
-  if (cameraControlBusy.value || requestVersion !== cameraControlVersion) {
-    return
-  }
-
-  framerate.value = result
+  framerate.value = await response.json()
 }
 
 async function loadWhiteBalance() {
@@ -289,11 +295,16 @@ async function setWhiteBalanceAuto() {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
+
+    const result = await response.json()
+    whiteBalance.value = {
+      ...whiteBalance.value,
+      ...result,
+    }
   } catch (exc) {
     whiteBalanceError.value = exc.message
   } finally {
     whiteBalanceBusy.value = false
-    await loadWhiteBalance()
   }
 }
 
@@ -315,12 +326,11 @@ async function setWhiteBalanceSingle() {
     whiteBalanceError.value = exc.message
   } finally {
     whiteBalanceBusy.value = false
-    await loadWhiteBalance()
   }
 }
 
 async function setFramerate(fps) {
-  await runCameraControl(async () => {
+  const result = await runCameraControl(async () => {
     const response = await fetch('/api/framerate', {
       method: 'PUT',
       headers: {
@@ -332,7 +342,11 @@ async function setFramerate(fps) {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
-  }, loadFramerate)
+
+    return response.json()
+  })
+
+  framerate.value = result
 }
 
 async function setExposureAuto(auto) {
@@ -346,7 +360,7 @@ async function setExposureAuto(auto) {
     body.exposure_time_us = exposure.value.exposure_time_us
   }
 
-  await runCameraControl(async () => {
+  const result = await runCameraControl(async () => {
     const response = await fetch('/api/exposure', {
       method: 'PUT',
       headers: {
@@ -358,7 +372,21 @@ async function setExposureAuto(auto) {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
-  }, loadExposure)
+
+    return response.json()
+  })
+
+  const nextExposure = {
+    ...exposure.value,
+    auto: result.auto,
+    exposure_value: result.exposure_value,
+  }
+
+  if (result.exposure_time_us != null) {
+    nextExposure.exposure_time_us = result.exposure_time_us
+  }
+
+  exposure.value = nextExposure
 }
 
 async function loadCameraPage() {
