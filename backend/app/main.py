@@ -1,16 +1,14 @@
 import io
 import signal
 from contextlib import asynccontextmanager
-from threading import Condition, Event, current_thread, main_thread
+from threading import Condition, Event, Lock, current_thread, main_thread
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from picamera2 import Picamera2
 from picamera2.encoders import MJPEGEncoder
 from picamera2.outputs import FileOutput
-
 from pydantic import BaseModel
-from fastapi import HTTPException
 
 
 class StreamingOutput(io.BufferedIOBase):
@@ -30,7 +28,9 @@ picam2: Picamera2 | None = None
 camera_error: str | None = None
 output = StreamingOutput()
 stream_stop = Event()
+camera_lock = Lock()
 exposure_auto = True
+frame_rate = 15
 
 ALLOWED_FRAME_RATES = {1, 5, 15}
 
@@ -46,6 +46,16 @@ class ExposureStep(BaseModel):
 
 class FrameRateSettings(BaseModel):
     fps: int
+
+
+def start_stream_encoder():
+    if picam2 is None:
+        return
+
+    picam2.start_encoder(
+        MJPEGEncoder(),
+        FileOutput(output),
+    )
 
 
 def stop_streams():
@@ -102,10 +112,8 @@ async def lifespan(app: FastAPI):
         picam2.set_controls({
             "AeEnable": True,
         })
-        picam2.start_recording(
-            MJPEGEncoder(),
-            FileOutput(output),
-        )
+        picam2.start()
+        start_stream_encoder()
 
         camera_error = None
 
@@ -118,7 +126,12 @@ async def lifespan(app: FastAPI):
     stop_streams()
 
     if picam2 is not None:
-        picam2.stop_recording()
+        try:
+            picam2.stop_encoder()
+        except Exception:
+            pass
+
+        picam2.stop()
         picam2.close()
 
     restore_shutdown_signal_handlers(previous_signal_handlers)
@@ -212,13 +225,73 @@ def stream():
     )
 
 
+@app.post("/api/photo")
+def take_photo():
+    global frame_rate
+
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    with camera_lock:
+        metadata = picam2.capture_metadata()
+        current_exposure = metadata.get("ExposureTime")
+
+        still_controls = {
+            "AeEnable": exposure_auto,
+        }
+
+        if not exposure_auto and current_exposure is not None:
+            still_controls["ExposureTime"] = current_exposure
+
+        still_config = picam2.create_still_configuration(
+            controls=still_controls,
+        )
+
+        photo = io.BytesIO()
+
+        picam2.stop_encoder()
+
+        try:
+            picam2.switch_mode_and_capture_file(
+                still_config,
+                photo,
+                format="jpeg",
+            )
+        finally:
+            frame_duration_us = round(1_000_000 / frame_rate)
+
+            restore_controls = {
+                "AeEnable": exposure_auto,
+                "FrameDurationLimits": (
+                    frame_duration_us,
+                    frame_duration_us,
+                ),
+            }
+
+            if not exposure_auto and current_exposure is not None:
+                restore_controls["ExposureTime"] = current_exposure
+
+            picam2.set_controls(restore_controls)
+            start_stream_encoder()
+
+        return Response(
+            content=photo.getvalue(),
+            media_type="image/jpeg",
+            headers={
+                "Content-Disposition": 'attachment; filename="microscope.jpg"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+
 @app.get("/api/framerate")
 def get_framerate():
     if picam2 is None:
         raise HTTPException(status_code=503, detail="Camera not available")
 
-    metadata = picam2.capture_metadata()
-    frame_duration_us = metadata.get("FrameDuration")
+    with camera_lock:
+        metadata = picam2.capture_metadata()
+        frame_duration_us = metadata.get("FrameDuration")
 
     fps = None
     if frame_duration_us:
@@ -233,6 +306,8 @@ def get_framerate():
 
 @app.put("/api/framerate")
 def set_framerate(settings: FrameRateSettings):
+    global frame_rate
+
     if picam2 is None:
         raise HTTPException(status_code=503, detail="Camera not available")
 
@@ -244,9 +319,11 @@ def set_framerate(settings: FrameRateSettings):
 
     frame_duration_us = round(1_000_000 / settings.fps)
 
-    picam2.set_controls({
-        "FrameDurationLimits": (frame_duration_us, frame_duration_us),
-    })
+    with camera_lock:
+        picam2.set_controls({
+            "FrameDurationLimits": (frame_duration_us, frame_duration_us),
+        })
+        frame_rate = settings.fps
 
     return {
         "fps": settings.fps,
@@ -260,29 +337,14 @@ def get_exposure():
     if picam2 is None:
         raise HTTPException(status_code=503, detail="Camera not available")
 
-    metadata = picam2.capture_metadata()
-
-    exposure_min, exposure_max, exposure_default = (
-        picam2.camera_controls["ExposureTime"]
-    )
-
+    with camera_lock:
+        metadata = picam2.capture_metadata()
 
     return {
         "auto": exposure_auto,
         "exposure_time_us": metadata.get("ExposureTime"),
         "analogue_gain": metadata.get("AnalogueGain"),
         "digital_gain": metadata.get("DigitalGain"),
-        # bestaande range...
-    }
-
-    return {
-        "auto": exposure_auto,
-        "exposure_time_us": metadata.get("ExposureTime"),
-        "range": {
-            "min_us": exposure_min,
-            "max_us": exposure_max,
-            "default_us": exposure_default,
-        },
     }
 
 
@@ -308,11 +370,9 @@ def set_exposure(settings: ExposureSettings):
 
         controls["ExposureTime"] = settings.exposure_time_us
 
-    picam2.set_controls(controls)
-
-    exposure_auto = settings.auto
-
-    metadata = picam2.capture_metadata()
+    with camera_lock:
+        picam2.set_controls(controls)
+        exposure_auto = settings.auto
 
     return {
         "auto": exposure_auto,
@@ -333,27 +393,28 @@ def step_exposure(step: ExposureStep):
             detail="Exposure stepping is only available in manual mode",
         )
 
-    metadata = picam2.capture_metadata()
-    current_exposure = metadata.get("ExposureTime")
+    with camera_lock:
+        metadata = picam2.capture_metadata()
+        current_exposure = metadata.get("ExposureTime")
 
-    if current_exposure is None:
-        raise HTTPException(
-            status_code=500,
-            detail="Current exposure time unavailable",
+        if current_exposure is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Current exposure time unavailable",
+            )
+
+        exposure_min, exposure_max, _ = picam2.camera_controls["ExposureTime"]
+
+        new_exposure = round(current_exposure * step.factor)
+
+        new_exposure = max(
+            exposure_min,
+            min(new_exposure, exposure_max),
         )
 
-    exposure_min, exposure_max, _ = picam2.camera_controls["ExposureTime"]
-
-    new_exposure = round(current_exposure * step.factor)
-
-    new_exposure = max(
-        exposure_min,
-        min(new_exposure, exposure_max),
-    )
-
-    picam2.set_controls({
-        "ExposureTime": new_exposure,
-    })
+        picam2.set_controls({
+            "ExposureTime": new_exposure,
+        })
 
     return {
         "auto": False,
