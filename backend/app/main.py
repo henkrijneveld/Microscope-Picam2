@@ -1,14 +1,23 @@
 import io
+import json
+import re
 import signal
+import unicodedata
 from contextlib import asynccontextmanager
+from datetime import datetime
 from threading import Condition, Event, Lock, current_thread, main_thread
 
+import piexif
+import piexif.helper
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from picamera2 import Picamera2
 from picamera2.encoders import MJPEGEncoder
 from picamera2.outputs import FileOutput
 from pydantic import BaseModel
+
+
+LIVE_SIZE = (640, 480)
 
 
 class StreamingOutput(io.BufferedIOBase):
@@ -54,6 +63,10 @@ class FrameRateSettings(BaseModel):
     fps: int
 
 
+class PhotoSettings(BaseModel):
+    name: str
+
+
 def start_stream_encoder():
     if picam2 is None:
         return
@@ -62,6 +75,37 @@ def start_stream_encoder():
         MJPEGEncoder(),
         FileOutput(output),
     )
+
+
+def sanitize_photo_name(name: str):
+    normalized = unicodedata.normalize("NFKD", name)
+    normalized = normalized.encode("ascii", "ignore").decode("ascii")
+    normalized = re.sub(r"\s+", "-", normalized.strip())
+    normalized = re.sub(r"[^A-Za-z0-9_-]+", "-", normalized)
+    normalized = re.sub(r"-+", "-", normalized).strip("-_")
+
+    return normalized[:80]
+
+
+def embed_photo_metadata(jpeg_data: bytes, photo_metadata: dict, safe_name: str):
+    exif_dict = piexif.load(jpeg_data)
+
+    exif_dict["0th"][piexif.ImageIFD.ImageDescription] = safe_name
+    exif_dict["Exif"][piexif.ExifIFD.UserComment] = piexif.helper.UserComment.dump(
+        json.dumps(
+            photo_metadata,
+            ensure_ascii=False,
+            default=str,
+            separators=(",", ":"),
+        ),
+        encoding="unicode",
+    )
+
+    exif_bytes = piexif.dump(exif_dict)
+    output_file = io.BytesIO()
+    piexif.insert(exif_bytes, jpeg_data, output_file)
+
+    return output_file.getvalue()
 
 
 def stop_streams():
@@ -110,7 +154,7 @@ async def lifespan(app: FastAPI):
         picam2 = Picamera2()
 
         config = picam2.create_video_configuration(
-            main={"size": (640, 480)},
+            main={"size": LIVE_SIZE},
             controls={"FrameRate": 15},
         )
         picam2.configure(config)
@@ -233,13 +277,25 @@ def stream():
 
 
 @app.post("/api/photo")
-def take_photo():
+def take_photo(settings: PhotoSettings):
     global frame_rate
 
     if picam2 is None:
         raise HTTPException(status_code=503, detail="Camera not available")
 
+    requested_name = settings.name.strip()
+    safe_name = sanitize_photo_name(requested_name)
+
+    if not safe_name:
+        raise HTTPException(
+            status_code=400,
+            detail="Photo name is required",
+        )
+
     with camera_lock:
+        capture_time = datetime.now()
+        filename = f"{capture_time.strftime('%y%m%d-%H%M%S')}-{safe_name}.jpg"
+
         metadata = picam2.capture_metadata()
         current_exposure = metadata.get("ExposureTime")
 
@@ -261,10 +317,32 @@ def take_photo():
         picam2.stop_encoder()
 
         try:
-            picam2.switch_mode_and_capture_file(
+            captured_metadata = picam2.switch_mode_and_capture_file(
                 still_config,
                 photo,
                 format="jpeg",
+            )
+
+            photo_metadata = {
+                "microscope_picam2": {
+                    "name": requested_name,
+                    "filename": filename,
+                    "capture_time": capture_time.isoformat(timespec="seconds"),
+                    "camera_model": picam2.camera_properties.get("Model", "unknown"),
+                    "stream_resolution": list(LIVE_SIZE),
+                    "still_resolution": list(still_config["main"]["size"]),
+                    "jpeg_quality": picam2.options.get("quality", 90),
+                    "frame_rate_fps": frame_rate,
+                    "exposure_auto": exposure_auto,
+                    "exposure_value_ev": exposure_value if exposure_auto else None,
+                },
+                "camera_metadata": captured_metadata,
+            }
+
+            photo_data = embed_photo_metadata(
+                photo.getvalue(),
+                photo_metadata,
+                safe_name,
             )
         finally:
             frame_duration_us = round(1_000_000 / frame_rate)
@@ -286,10 +364,10 @@ def take_photo():
             start_stream_encoder()
 
         return Response(
-            content=photo.getvalue(),
+            content=photo_data,
             media_type="image/jpeg",
             headers={
-                "Content-Disposition": 'attachment; filename="microscope.jpg"',
+                "Content-Disposition": f'attachment; filename="{filename}"',
                 "Cache-Control": "no-store",
             },
         )
