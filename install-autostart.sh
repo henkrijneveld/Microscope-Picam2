@@ -69,7 +69,8 @@ sudo install -o root -g root -m 0440 "$SUDOERS_TMP" "$SUDOERS_FILE"
 echo "Systemd-service installeren als $SERVICE_NAME..."
 sudo cp "$SERVICE_TMP" "$SERVICE_FILE"
 sudo systemctl daemon-reload
-sudo systemctl enable --now "$SERVICE_NAME.service"
+sudo systemctl enable "$SERVICE_NAME.service"
+sudo systemctl restart "$SERVICE_NAME.service"
 
 echo
 sudo systemctl --no-pager --full status "$SERVICE_NAME.service" || true
