@@ -6,6 +6,9 @@ const error = ref(null)
 
 const exposure = ref(null)
 const framerate = ref(null)
+const whiteBalance = ref(null)
+const whiteBalanceBusy = ref(false)
+const whiteBalanceError = ref(null)
 const photoBusy = ref(false)
 const photoError = ref(null)
 const photoName = ref('microscope')
@@ -21,6 +24,7 @@ const exposureValues = [
 ]
 
 let exposureTimer = null
+let whiteBalanceTimer = null
 
 function formatExposureTime(exposureTimeUs) {
   if (exposureTimeUs == null) {
@@ -40,6 +44,14 @@ function formatDigitalGain(gain) {
   }
 
   return Number(gain).toFixed(1)
+}
+
+function formatColourGain(gain) {
+  if (gain == null) {
+    return '—'
+  }
+
+  return Number(gain).toFixed(2)
 }
 
 function getDownloadFilename(response) {
@@ -86,6 +98,7 @@ async function takePhoto() {
     photoBusy.value = false
     await loadExposure()
     await loadFramerate()
+    await loadWhiteBalance()
   }
 }
 
@@ -145,6 +158,66 @@ async function loadFramerate() {
   framerate.value = await response.json()
 }
 
+async function loadWhiteBalance() {
+  if (photoBusy.value || whiteBalanceBusy.value) {
+    return
+  }
+
+  const response = await fetch('/api/whitebalance')
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+
+  whiteBalance.value = await response.json()
+}
+
+async function setWhiteBalanceAuto() {
+  whiteBalanceBusy.value = true
+  whiteBalanceError.value = null
+
+  try {
+    const response = await fetch('/api/whitebalance', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ auto: true }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+  } catch (exc) {
+    whiteBalanceError.value = exc.message
+  } finally {
+    whiteBalanceBusy.value = false
+    await loadWhiteBalance()
+  }
+}
+
+async function setWhiteBalanceSingle() {
+  whiteBalanceBusy.value = true
+  whiteBalanceError.value = null
+
+  try {
+    const response = await fetch('/api/whitebalance/single', {
+      method: 'POST',
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    whiteBalance.value = await response.json()
+  } catch (exc) {
+    whiteBalanceError.value = exc.message
+  } finally {
+    whiteBalanceBusy.value = false
+    await loadWhiteBalance()
+  }
+}
+
 async function setFramerate(fps) {
   const response = await fetch('/api/framerate', {
     method: 'PUT',
@@ -199,8 +272,10 @@ onMounted(async () => {
 
     await loadExposure()
     await loadFramerate()
+    await loadWhiteBalance()
 
     exposureTimer = setInterval(loadExposure, 500)
+    whiteBalanceTimer = setInterval(loadWhiteBalance, 1000)
   } catch (exc) {
     error.value = exc.message
   }
@@ -209,6 +284,10 @@ onMounted(async () => {
 onUnmounted(() => {
   if (exposureTimer) {
     clearInterval(exposureTimer)
+  }
+
+  if (whiteBalanceTimer) {
+    clearInterval(whiteBalanceTimer)
   }
 })
 </script>
@@ -310,6 +389,36 @@ onUnmounted(() => {
         Exposure: {{ formatExposureTime(exposure.exposure_time_us) }}<br>
         Analogue gain: {{ formatDigitalGain(exposure.analogue_gain) }}<br>
         Digital gain: {{ formatDigitalGain(exposure.digital_gain) }}
+      </p>
+    </section>
+
+    <section v-if="whiteBalance">
+      <h2>White balance</h2>
+
+      <button
+        :disabled="whiteBalanceBusy || whiteBalance.auto"
+        @click="setWhiteBalanceAuto"
+      >
+        Auto
+      </button>
+
+      <button
+        :disabled="whiteBalanceBusy"
+        @click="setWhiteBalanceSingle"
+      >
+        {{ whiteBalanceBusy ? 'Witbalans meten...' : 'Set white balance' }}
+      </button>
+
+      <p>
+        Mode: {{ whiteBalance.auto ? 'Auto' : 'Single shot' }}<br>
+        Red gain: {{ formatColourGain(whiteBalance.red_gain) }}<br>
+        Blue gain: {{ formatColourGain(whiteBalance.blue_gain) }}<br>
+        Colour temperature:
+        {{ whiteBalance.colour_temperature == null ? '—' : `${whiteBalance.colour_temperature} K` }}
+      </p>
+
+      <p v-if="whiteBalanceError">
+        Fout bij witbalans: {{ whiteBalanceError }}
       </p>
     </section>
 
