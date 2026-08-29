@@ -33,18 +33,6 @@ exposure_auto = True
 frame_rate = 15
 
 ALLOWED_FRAME_RATES = {1, 5, 15}
-PHOTO_FORMATS = {
-    "jpeg": {
-        "capture_format": "jpeg",
-        "extension": "jpg",
-        "media_type": "image/jpeg",
-    },
-    "png": {
-        "capture_format": "png",
-        "extension": "png",
-        "media_type": "image/png",
-    },
-}
 
 
 class ExposureSettings(BaseModel):
@@ -238,18 +226,11 @@ def stream():
 
 
 @app.post("/api/photo")
-def take_photo(format: str = "jpeg"):
+def take_photo():
     global frame_rate
 
     if picam2 is None:
         raise HTTPException(status_code=503, detail="Camera not available")
-
-    photo_format = PHOTO_FORMATS.get(format.lower())
-    if photo_format is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Photo format must be jpeg or png",
-        )
 
     with camera_lock:
         metadata = picam2.capture_metadata()
@@ -274,7 +255,7 @@ def take_photo(format: str = "jpeg"):
             picam2.switch_mode_and_capture_file(
                 still_config,
                 photo,
-                format=photo_format["capture_format"],
+                format="jpeg",
             )
         finally:
             frame_duration_us = round(1_000_000 / frame_rate)
@@ -293,13 +274,11 @@ def take_photo(format: str = "jpeg"):
             picam2.set_controls(restore_controls)
             start_stream_encoder()
 
-        filename = f'microscope.{photo_format["extension"]}'
-
         return Response(
             content=photo.getvalue(),
-            media_type=photo_format["media_type"],
+            media_type="image/jpeg",
             headers={
-                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Content-Disposition": 'attachment; filename="microscope.jpg"',
                 "Cache-Control": "no-store",
             },
         )
