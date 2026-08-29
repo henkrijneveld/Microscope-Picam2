@@ -493,7 +493,22 @@ onUnmounted(() => {
       >
         Bestanden
       </button>
+
+      <button
+        :disabled="shutdownBusy || shuttingDown"
+        @click="shutdownPi"
+      >
+        {{ shutdownBusy ? 'Pi stoppen...' : 'Stop Pi' }}
+      </button>
     </nav>
+
+    <p v-if="shuttingDown">
+      Pi wordt afgesloten. Wacht tot de Pi volledig uit is voordat de voeding wordt losgenomen.
+    </p>
+
+    <p v-if="shutdownError">
+      Fout bij afsluiten: {{ shutdownError }}
+    </p>
 
     <template v-if="currentPage === 'camera'">
       <p v-if="error">
@@ -649,25 +664,6 @@ onUnmounted(() => {
 
         <p v-if="photoError">
           Fout bij foto: {{ photoError }}
-        </p>
-      </section>
-
-      <section>
-        <h2>Systeem</h2>
-
-        <button
-          :disabled="shutdownBusy || shuttingDown"
-          @click="shutdownPi"
-        >
-          {{ shutdownBusy ? 'Pi stoppen...' : 'Stop Pi' }}
-        </button>
-
-        <p v-if="shuttingDown">
-          Pi wordt afgesloten. Wacht tot de Pi volledig uit is voordat de voeding wordt losgenomen.
-        </p>
-
-        <p v-if="shutdownError">
-          Fout bij afsluiten: {{ shutdownError }}
         </p>
       </section>
 
