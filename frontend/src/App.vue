@@ -8,7 +8,6 @@ const exposure = ref(null)
 const framerate = ref(null)
 const photoBusy = ref(false)
 const photoError = ref(null)
-const photoFormat = ref('jpeg')
 
 let exposureTimer = null
 
@@ -37,7 +36,7 @@ async function takePhoto() {
   photoError.value = null
 
   try {
-    const response = await fetch(`/api/photo?format=${photoFormat.value}`, {
+    const response = await fetch('/api/photo', {
       method: 'POST',
     })
 
@@ -48,10 +47,9 @@ async function takePhoto() {
     const blob = await response.blob()
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
-    const extension = photoFormat.value === 'png' ? 'png' : 'jpg'
 
     link.href = url
-    link.download = `microscope.${extension}`
+    link.download = 'microscope.jpg'
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -267,27 +265,11 @@ onUnmounted(() => {
       <h2>Foto</h2>
 
       <button
-        :disabled="photoBusy || photoFormat === 'jpeg'"
-        @click="photoFormat = 'jpeg'"
+        :disabled="photoBusy"
+        @click="takePhoto"
       >
-        JPEG
+        {{ photoBusy ? 'Foto maken...' : 'Foto nemen' }}
       </button>
-
-      <button
-        :disabled="photoBusy || photoFormat === 'png'"
-        @click="photoFormat = 'png'"
-      >
-        PNG
-      </button>
-
-      <div>
-        <button
-          :disabled="photoBusy"
-          @click="takePhoto"
-        >
-          {{ photoBusy ? 'Foto maken...' : 'Foto nemen' }}
-        </button>
-      </div>
 
       <p v-if="photoError">
         Fout bij foto: {{ photoError }}
