@@ -9,6 +9,7 @@ const error = ref(null)
 const exposure = ref(null)
 const framerate = ref(null)
 const whiteBalance = ref(null)
+const cameraControlBusy = ref(false)
 const whiteBalanceBusy = ref(false)
 const whiteBalanceError = ref(null)
 const photoBusy = ref(false)
@@ -33,6 +34,7 @@ const exposureValues = [
 
 let exposureTimer = null
 let whiteBalanceTimer = null
+let cameraControlVersion = 0
 
 function formatExposureTime(exposureTimeUs) {
   if (exposureTimeUs == null) {
@@ -100,6 +102,18 @@ function stopCameraPolling() {
   }
 }
 
+async function runCameraControl(action, refresh) {
+  cameraControlVersion += 1
+  cameraControlBusy.value = true
+
+  try {
+    await action()
+  } finally {
+    cameraControlBusy.value = false
+    await refresh()
+  }
+}
+
 async function takePhoto() {
   photoBusy.value = true
   photoError.value = null
@@ -133,63 +147,90 @@ async function takePhoto() {
 }
 
 async function setExposureValue(value) {
-  const response = await fetch('/api/exposure/value', {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ value }),
-  })
+  await runCameraControl(async () => {
+    const response = await fetch('/api/exposure/value', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ value }),
+    })
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-
-  await loadExposure()
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+  }, loadExposure)
 }
 
 async function stepExposure(factor) {
-  const response = await fetch('/api/exposure/step', {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ factor }),
-  })
+  await runCameraControl(async () => {
+    const response = await fetch('/api/exposure/step', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ factor }),
+    })
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-
-  // De poll leest daarna de werkelijk toegepaste camerawaarde terug.
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+  }, loadExposure)
 }
 
 async function loadExposure() {
-  if (currentPage.value !== 'camera' || photoBusy.value || !status.value?.camera?.connected) {
+  if (
+    currentPage.value !== 'camera'
+    || photoBusy.value
+    || cameraControlBusy.value
+    || !status.value?.camera?.connected
+  ) {
     return
   }
 
+  const requestVersion = cameraControlVersion
   const response = await fetch('/api/exposure')
 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
   }
 
-  exposure.value = await response.json()
-}
+  const result = await response.json()
 
-async function loadFramerate() {
-  if (currentPage.value !== 'camera' || !status.value?.camera?.connected) {
+  if (
+    photoBusy.value
+    || cameraControlBusy.value
+    || requestVersion !== cameraControlVersion
+  ) {
     return
   }
 
+  exposure.value = result
+}
+
+async function loadFramerate() {
+  if (
+    currentPage.value !== 'camera'
+    || cameraControlBusy.value
+    || !status.value?.camera?.connected
+  ) {
+    return
+  }
+
+  const requestVersion = cameraControlVersion
   const response = await fetch('/api/framerate')
 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
   }
 
-  framerate.value = await response.json()
+  const result = await response.json()
+
+  if (cameraControlBusy.value || requestVersion !== cameraControlVersion) {
+    return
+  }
+
+  framerate.value = result
 }
 
 async function loadWhiteBalance() {
@@ -279,19 +320,19 @@ async function setWhiteBalanceSingle() {
 }
 
 async function setFramerate(fps) {
-  const response = await fetch('/api/framerate', {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ fps }),
-  })
+  await runCameraControl(async () => {
+    const response = await fetch('/api/framerate', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ fps }),
+    })
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-
-  await loadFramerate()
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+  }, loadFramerate)
 }
 
 async function setExposureAuto(auto) {
@@ -305,19 +346,19 @@ async function setExposureAuto(auto) {
     body.exposure_time_us = exposure.value.exposure_time_us
   }
 
-  const response = await fetch('/api/exposure', {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  })
+  await runCameraControl(async () => {
+    const response = await fetch('/api/exposure', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    })
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
-  }
-
-  await loadExposure()
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+  }, loadExposure)
 }
 
 async function loadCameraPage() {
@@ -407,7 +448,7 @@ onUnmounted(() => {
         <button
           v-for="fps in framerate.options"
           :key="fps"
-          :disabled="framerate.fps === fps"
+          :disabled="cameraControlBusy || framerate.fps === fps"
           @click="setFramerate(fps)"
         >
           {{ fps }} fps
@@ -422,14 +463,14 @@ onUnmounted(() => {
         <h2>Exposure</h2>
 
         <button
-          :disabled="exposure.auto"
+          :disabled="cameraControlBusy || exposure.auto"
           @click="setExposureAuto(true)"
         >
           Auto
         </button>
 
         <button
-          :disabled="!exposure.auto"
+          :disabled="cameraControlBusy || !exposure.auto"
           @click="setExposureAuto(false)"
         >
           Manual
@@ -439,7 +480,7 @@ onUnmounted(() => {
           <button
             v-for="item in exposureValues"
             :key="item.value"
-            :disabled="!exposure.auto || exposure.exposure_value === item.value"
+            :disabled="cameraControlBusy || !exposure.auto || exposure.exposure_value === item.value"
             @click="setExposureValue(item.value)"
           >
             {{ item.label }}
@@ -448,28 +489,28 @@ onUnmounted(() => {
 
         <div>
           <button
-            :disabled="exposure.auto"
+            :disabled="cameraControlBusy || exposure.auto"
             @click="stepExposure(1 / 4)"
           >
             1/4
           </button>
 
           <button
-            :disabled="exposure.auto"
+            :disabled="cameraControlBusy || exposure.auto"
             @click="stepExposure(1 / 2)"
           >
             1/2
           </button>
 
           <button
-            :disabled="exposure.auto"
+            :disabled="cameraControlBusy || exposure.auto"
             @click="stepExposure(2)"
           >
             2×
           </button>
 
           <button
-            :disabled="exposure.auto"
+            :disabled="cameraControlBusy || exposure.auto"
             @click="stepExposure(4)"
           >
             4×
