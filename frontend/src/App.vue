@@ -16,6 +16,9 @@ const photoBusy = ref(false)
 const photoError = ref(null)
 const photoName = ref('microscope')
 const lastSavedFile = ref(null)
+const shutdownBusy = ref(false)
+const shutdownError = ref(null)
+const shuttingDown = ref(false)
 
 const files = ref([])
 const filesDirectory = ref(null)
@@ -196,6 +199,7 @@ async function loadExposure() {
     currentPage.value !== 'camera'
     || photoBusy.value
     || cameraControlBusy.value
+    || shuttingDown.value
     || !status.value?.camera?.connected
   ) {
     return
@@ -213,6 +217,7 @@ async function loadExposure() {
   if (
     photoBusy.value
     || cameraControlBusy.value
+    || shuttingDown.value
     || requestVersion !== cameraControlVersion
   ) {
     return
@@ -225,6 +230,7 @@ async function loadFramerate() {
   if (
     currentPage.value !== 'camera'
     || cameraControlBusy.value
+    || shuttingDown.value
     || !status.value?.camera?.connected
   ) {
     return
@@ -244,6 +250,7 @@ async function loadWhiteBalance() {
     currentPage.value !== 'camera'
     || photoBusy.value
     || whiteBalanceBusy.value
+    || shuttingDown.value
     || !status.value?.camera?.connected
   ) {
     return
@@ -387,6 +394,39 @@ async function setExposureAuto(auto) {
   }
 
   exposure.value = nextExposure
+}
+
+async function shutdownPi() {
+  if (!window.confirm('Pi volledig uitschakelen?')) {
+    return
+  }
+
+  shutdownBusy.value = true
+  shutdownError.value = null
+  stopCameraPolling()
+
+  try {
+    const response = await fetch('/api/system/shutdown', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        confirm: 'shutdown',
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    shuttingDown.value = true
+  } catch (exc) {
+    shutdownError.value = exc.message
+    startCameraPolling()
+  } finally {
+    shutdownBusy.value = false
+  }
 }
 
 async function loadCameraPage() {
@@ -609,6 +649,25 @@ onUnmounted(() => {
 
         <p v-if="photoError">
           Fout bij foto: {{ photoError }}
+        </p>
+      </section>
+
+      <section>
+        <h2>Systeem</h2>
+
+        <button
+          :disabled="shutdownBusy || shuttingDown"
+          @click="shutdownPi"
+        >
+          {{ shutdownBusy ? 'Pi stoppen...' : 'Stop Pi' }}
+        </button>
+
+        <p v-if="shuttingDown">
+          Pi wordt afgesloten. Wacht tot de Pi volledig uit is voordat de voeding wordt losgenomen.
+        </p>
+
+        <p v-if="shutdownError">
+          Fout bij afsluiten: {{ shutdownError }}
         </p>
       </section>
 
