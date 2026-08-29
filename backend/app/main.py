@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 LIVE_SIZE = (640, 480)
+LIVE_SENSOR_SIZE = (2028, 1520)
 PHOTO_DIR = PROJECT_DIR / "photos"
 FRONTEND_DIST = PROJECT_DIR / "frontend" / "dist"
 
@@ -190,6 +191,10 @@ async def lifespan(app: FastAPI):
 
         config = picam2.create_video_configuration(
             main={"size": LIVE_SIZE},
+            sensor={
+                "output_size": LIVE_SENSOR_SIZE,
+                "bit_depth": 12,
+            },
             controls={"FrameRate": 15},
         )
         picam2.configure(config)
