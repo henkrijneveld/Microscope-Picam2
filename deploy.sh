@@ -52,11 +52,12 @@ rsync -az --delete \
   frontend/dist/ \
   "$PI_HOST:~/$DEPLOY_DIR/frontend/dist/"
 
-echo "Startscript deployen..."
+echo "Start- en installatiescripts deployen..."
 rsync -az \
   runback.sh \
-  "$PI_HOST:~/$DEPLOY_DIR/runback.sh"
+  install-autostart.sh \
+  "$PI_HOST:~/$DEPLOY_DIR/"
 
-ssh "$PI_HOST" "chmod +x ~/$DEPLOY_DIR/runback.sh"
+ssh "$PI_HOST" "chmod +x ~/$DEPLOY_DIR/runback.sh ~/$DEPLOY_DIR/install-autostart.sh"
 
 echo "Deploy gereed: $PI_HOST:~/$DEPLOY_DIR"
