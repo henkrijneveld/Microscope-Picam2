@@ -8,6 +8,7 @@ const exposure = ref(null)
 const framerate = ref(null)
 const photoBusy = ref(false)
 const photoError = ref(null)
+const photoName = ref('microscope')
 
 const exposureValues = [
   { value: -1, label: '-1' },
@@ -41,6 +42,13 @@ function formatDigitalGain(gain) {
   return Number(gain).toFixed(1)
 }
 
+function getDownloadFilename(response) {
+  const contentDisposition = response.headers.get('Content-Disposition')
+  const match = contentDisposition?.match(/filename="([^"]+)"/)
+
+  return match?.[1] ?? 'microscope.jpg'
+}
+
 async function takePhoto() {
   photoBusy.value = true
   photoError.value = null
@@ -48,18 +56,25 @@ async function takePhoto() {
   try {
     const response = await fetch('/api/photo', {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: photoName.value,
+      }),
     })
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
 
+    const filename = getDownloadFilename(response)
     const blob = await response.blob()
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
 
     link.href = url
-    link.download = 'microscope.jpg'
+    link.download = filename
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -301,12 +316,23 @@ onUnmounted(() => {
     <section>
       <h2>Foto</h2>
 
-      <button
-        :disabled="photoBusy"
-        @click="takePhoto"
-      >
-        {{ photoBusy ? 'Foto maken...' : 'Foto nemen' }}
-      </button>
+      <label>
+        Naam:
+        <input
+          v-model="photoName"
+          :disabled="photoBusy"
+          type="text"
+        >
+      </label>
+
+      <div>
+        <button
+          :disabled="photoBusy || !photoName.trim()"
+          @click="takePhoto"
+        >
+          {{ photoBusy ? 'Foto maken...' : 'Foto nemen' }}
+        </button>
+      </div>
 
       <p v-if="photoError">
         Fout bij foto: {{ photoError }}
