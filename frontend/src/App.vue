@@ -9,6 +9,16 @@ const framerate = ref(null)
 const photoBusy = ref(false)
 const photoError = ref(null)
 
+const exposureValues = [
+  { value: -1, label: '-1' },
+  { value: -0.5, label: '-1/2' },
+  { value: -0.25, label: '-1/4' },
+  { value: 0, label: '0' },
+  { value: 0.25, label: '+1/4' },
+  { value: 0.5, label: '+1/2' },
+  { value: 1, label: '+1' },
+]
+
 let exposureTimer = null
 
 function formatExposureTime(exposureTimeUs) {
@@ -62,6 +72,22 @@ async function takePhoto() {
     await loadExposure()
     await loadFramerate()
   }
+}
+
+async function setExposureValue(value) {
+  const response = await fetch('/api/exposure/value', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ value }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+
+  await loadExposure()
 }
 
 async function stepExposure(factor) {
@@ -223,8 +249,19 @@ onUnmounted(() => {
       >
         Manual
       </button>
-      <div>
 
+      <div>
+        <button
+          v-for="item in exposureValues"
+          :key="item.value"
+          :disabled="!exposure.auto || exposure.exposure_value === item.value"
+          @click="setExposureValue(item.value)"
+        >
+          {{ item.label }}
+        </button>
+      </div>
+
+      <div>
         <button
           :disabled="exposure.auto"
           @click="stepExposure(1 / 4)"
@@ -252,8 +289,8 @@ onUnmounted(() => {
         >
           4×
         </button>
-
       </div>
+
       <p>
         Exposure: {{ formatExposureTime(exposure.exposure_time_us) }}<br>
         Analogue gain: {{ formatDigitalGain(exposure.analogue_gain) }}<br>
