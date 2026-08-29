@@ -28,12 +28,21 @@ camera_error: str | None = None
 output = StreamingOutput()
 exposure_auto = True
 
+ALLOWED_FRAME_RATES = {1, 5, 15}
+
+
 class ExposureSettings(BaseModel):
     auto: bool
     exposure_time_us: int | None = None
 
+
 class ExposureStep(BaseModel):
     factor: float
+
+
+class FrameRateSettings(BaseModel):
+    fps: int
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -74,6 +83,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     return """
@@ -93,6 +103,7 @@ def index():
     </body>
     </html>
     """
+
 
 @app.get("/api/status")
 def status():
@@ -141,6 +152,50 @@ def stream():
         },
     )
 
+
+@app.get("/api/framerate")
+def get_framerate():
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    metadata = picam2.capture_metadata()
+    frame_duration_us = metadata.get("FrameDuration")
+
+    fps = None
+    if frame_duration_us:
+        fps = round(1_000_000 / frame_duration_us)
+
+    return {
+        "fps": fps,
+        "frame_duration_us": frame_duration_us,
+        "options": sorted(ALLOWED_FRAME_RATES, reverse=True),
+    }
+
+
+@app.put("/api/framerate")
+def set_framerate(settings: FrameRateSettings):
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    if settings.fps not in ALLOWED_FRAME_RATES:
+        raise HTTPException(
+            status_code=400,
+            detail="Frame rate must be 15, 5 or 1 fps",
+        )
+
+    frame_duration_us = round(1_000_000 / settings.fps)
+
+    picam2.set_controls({
+        "FrameDurationLimits": (frame_duration_us, frame_duration_us),
+    })
+
+    return {
+        "fps": settings.fps,
+        "frame_duration_us": frame_duration_us,
+        "options": sorted(ALLOWED_FRAME_RATES, reverse=True),
+    }
+
+
 @app.get("/api/exposure")
 def get_exposure():
     if picam2 is None:
@@ -170,6 +225,7 @@ def get_exposure():
             "default_us": exposure_default,
         },
     }
+
 
 @app.put("/api/exposure")
 def set_exposure(settings: ExposureSettings):
@@ -203,6 +259,7 @@ def set_exposure(settings: ExposureSettings):
         "auto": exposure_auto,
         "exposure_time_us": settings.exposure_time_us,
     }
+
 
 @app.put("/api/exposure/step")
 def step_exposure(step: ExposureStep):
