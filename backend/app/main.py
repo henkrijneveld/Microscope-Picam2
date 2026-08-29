@@ -12,14 +12,17 @@ import piexif
 import piexif.helper
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from picamera2 import Picamera2
 from picamera2.encoders import MJPEGEncoder
 from picamera2.outputs import FileOutput
 from pydantic import BaseModel
 
 
+PROJECT_DIR = Path(__file__).resolve().parents[2]
 LIVE_SIZE = (640, 480)
-PHOTO_DIR = Path(__file__).resolve().parents[2] / "photos"
+PHOTO_DIR = PROJECT_DIR / "photos"
+FRONTEND_DIST = PROJECT_DIR / "frontend" / "dist"
 
 
 class StreamingOutput(io.BufferedIOBase):
@@ -225,27 +228,6 @@ app = FastAPI(
     title="Microscope Picam2",
     lifespan=lifespan,
 )
-
-
-@app.get("/", response_class=HTMLResponse)
-def index():
-    return """
-    <!doctype html>
-    <html lang="nl">
-    <head>
-        <meta charset="utf-8">
-        <title>Microscope Picam2</title>
-    </head>
-    <body>
-        <h1>Microscope Picam2</h1>
-
-        <img
-            src="/api/stream"
-            alt="Live camerabeeld"
-        >
-    </body>
-    </html>
-    """
 
 
 @app.get("/api/status")
@@ -760,3 +742,27 @@ def set_single_shot_white_balance():
             else None
         ),
     }
+
+
+if FRONTEND_DIST.is_dir():
+    app.mount(
+        "/",
+        StaticFiles(directory=FRONTEND_DIST, html=True),
+        name="frontend",
+    )
+else:
+    @app.get("/", response_class=HTMLResponse)
+    def frontend_not_built():
+        return """
+        <!doctype html>
+        <html lang="nl">
+        <head>
+            <meta charset="utf-8">
+            <title>Microscope Picam2</title>
+        </head>
+        <body>
+            <h1>Microscope Picam2</h1>
+            <p>Frontend is nog niet gebouwd. Start de server via runback.sh.</p>
+        </body>
+        </html>
+        """
