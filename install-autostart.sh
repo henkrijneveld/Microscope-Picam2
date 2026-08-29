@@ -7,6 +7,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_USER="${SUDO_USER:-$(id -un)}"
 RUN_GROUP="$(id -gn "$RUN_USER")"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+POWEROFF_HELPER="/usr/local/sbin/microscope-picam2-poweroff"
+SUDOERS_FILE="/etc/sudoers.d/microscope-picam2-poweroff"
+SYSTEMCTL="$(command -v systemctl)"
 
 cd "$ROOT_DIR"
 
@@ -22,10 +25,12 @@ fi
 
 chmod +x "$ROOT_DIR/runback.sh"
 
-TMP_FILE="$(mktemp)"
-trap 'rm -f "$TMP_FILE"' EXIT
+SERVICE_TMP="$(mktemp)"
+HELPER_TMP="$(mktemp)"
+SUDOERS_TMP="$(mktemp)"
+trap 'rm -f "$SERVICE_TMP" "$HELPER_TMP" "$SUDOERS_TMP"' EXIT
 
-cat > "$TMP_FILE" <<EOF
+cat > "$SERVICE_TMP" <<EOF
 [Unit]
 Description=Microscope Picam2 webserver
 After=network.target
@@ -43,8 +48,26 @@ RestartSec=2
 WantedBy=multi-user.target
 EOF
 
+cat > "$HELPER_TMP" <<EOF
+#!/bin/sh
+exec "$SYSTEMCTL" poweroff
+EOF
+
+cat > "$SUDOERS_TMP" <<EOF
+$RUN_USER ALL=(root) NOPASSWD: $POWEROFF_HELPER
+EOF
+
+if ! sudo visudo -cf "$SUDOERS_TMP" >/dev/null; then
+  echo "Sudoers-configuratie voor poweroff is ongeldig." >&2
+  exit 1
+fi
+
+echo "Poweroff-helper installeren..."
+sudo install -o root -g root -m 0755 "$HELPER_TMP" "$POWEROFF_HELPER"
+sudo install -o root -g root -m 0440 "$SUDOERS_TMP" "$SUDOERS_FILE"
+
 echo "Systemd-service installeren als $SERVICE_NAME..."
-sudo cp "$TMP_FILE" "$SERVICE_FILE"
+sudo cp "$SERVICE_TMP" "$SERVICE_FILE"
 sudo systemctl daemon-reload
 sudo systemctl enable --now "$SERVICE_NAME.service"
 
@@ -56,3 +79,4 @@ echo "Autostart geïnstalleerd."
 echo "Status:  sudo systemctl status $SERVICE_NAME"
 echo "Restart: sudo systemctl restart $SERVICE_NAME"
 echo "Logs:    journalctl -u $SERVICE_NAME -f"
+echo "Webinterface mag de Pi nu ook netjes uitschakelen."
