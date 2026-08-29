@@ -517,7 +517,12 @@ onUnmounted(() => {
 
       <div v-else-if="status">
         <p>Status: {{ status.status }}</p>
-        <p>Camera connected: {{ status.camera.connected }}</p>
+        <p>
+          Camera connected: {{ status.camera.connected }}
+          <template v-if="status.camera.connected">
+            ({{ status.camera.hostname || '—' }}, {{ status.camera.ip_address || '—' }})
+          </template>
+        </p>
         <p>Model: {{ status.camera.model }}</p>
       </div>
 
