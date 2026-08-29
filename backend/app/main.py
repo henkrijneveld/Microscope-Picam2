@@ -2,6 +2,7 @@ import io
 import json
 import re
 import signal
+import subprocess
 import unicodedata
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -10,7 +11,7 @@ from threading import Condition, Event, Lock, current_thread, main_thread
 
 import piexif
 import piexif.helper
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from picamera2 import Picamera2
@@ -24,6 +25,7 @@ LIVE_SIZE = (640, 480)
 LIVE_SENSOR_SIZE = (2028, 1520)
 PHOTO_DIR = PROJECT_DIR / "photos"
 FRONTEND_DIST = PROJECT_DIR / "frontend" / "dist"
+POWEROFF_HELPER = Path("/usr/local/sbin/microscope-picam2-poweroff")
 
 
 class StreamingOutput(io.BufferedIOBase):
@@ -80,6 +82,10 @@ class PhotoSettings(BaseModel):
 
 class WhiteBalanceSettings(BaseModel):
     auto: bool
+
+
+class ShutdownSettings(BaseModel):
+    confirm: str
 
 
 def start_stream_encoder():
@@ -164,6 +170,13 @@ def stop_streams():
     stream_stop.set()
     with output.condition:
         output.condition.notify_all()
+
+
+def poweroff_pi():
+    subprocess.run(
+        ["sudo", "-n", str(POWEROFF_HELPER)],
+        check=False,
+    )
 
 
 def install_shutdown_signal_handlers():
@@ -776,6 +789,27 @@ def set_single_shot_white_balance():
             if selected_metadata is not None
             else None
         ),
+    }
+
+
+@app.post("/api/system/shutdown")
+def shutdown_pi(settings: ShutdownSettings, background_tasks: BackgroundTasks):
+    if settings.confirm != "shutdown":
+        raise HTTPException(
+            status_code=400,
+            detail="Shutdown confirmation missing",
+        )
+
+    if not POWEROFF_HELPER.is_file():
+        raise HTTPException(
+            status_code=503,
+            detail="Poweroff helper is not installed",
+        )
+
+    background_tasks.add_task(poweroff_pi)
+
+    return {
+        "status": "shutting_down",
     }
 
 
