@@ -5,6 +5,7 @@ const status = ref(null)
 const error = ref(null)
 
 const exposure = ref(null)
+const framerate = ref(null)
 
 let exposureTimer = null
 
@@ -32,6 +33,32 @@ async function loadExposure() {
   }
 
   exposure.value = await response.json()
+}
+
+async function loadFramerate() {
+  const response = await fetch('/api/framerate')
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+
+  framerate.value = await response.json()
+}
+
+async function setFramerate(fps) {
+  const response = await fetch('/api/framerate', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ fps }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+
+  await loadFramerate()
 }
 
 async function setExposureAuto(auto) {
@@ -71,6 +98,7 @@ onMounted(async () => {
     status.value = await response.json()
 
     await loadExposure()
+    await loadFramerate()
 
     exposureTimer = setInterval(loadExposure, 500)
   } catch (exc) {
@@ -102,6 +130,23 @@ onUnmounted(() => {
     <p v-else>
       Camerastatus ophalen...
     </p>
+
+    <section v-if="framerate">
+      <h2>Frame rate</h2>
+
+      <button
+        v-for="fps in framerate.options"
+        :key="fps"
+        :disabled="framerate.fps === fps"
+        @click="setFramerate(fps)"
+      >
+        {{ fps }} fps
+      </button>
+
+      <p>
+        Huidig: {{ framerate.fps }} fps
+      </p>
+    </section>
 
     <section v-if="exposure">
       <h2>Exposure</h2>
