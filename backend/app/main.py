@@ -1,6 +1,7 @@
 import io
+import signal
 from contextlib import asynccontextmanager
-from threading import Condition
+from threading import Condition, Event, current_thread, main_thread
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -15,17 +16,20 @@ from fastapi import HTTPException
 class StreamingOutput(io.BufferedIOBase):
     def __init__(self):
         self.frame = None
+        self.sequence = 0
         self.condition = Condition()
 
     def write(self, buf):
         with self.condition:
             self.frame = buf
+            self.sequence += 1
             self.condition.notify_all()
 
 
 picam2: Picamera2 | None = None
 camera_error: str | None = None
 output = StreamingOutput()
+stream_stop = Event()
 exposure_auto = True
 
 ALLOWED_FRAME_RATES = {1, 5, 15}
@@ -44,9 +48,47 @@ class FrameRateSettings(BaseModel):
     fps: int
 
 
+def stop_streams():
+    stream_stop.set()
+    with output.condition:
+        output.condition.notify_all()
+
+
+def install_shutdown_signal_handlers():
+    if current_thread() is not main_thread():
+        return {}
+
+    previous_handlers = {}
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        previous_handler = signal.getsignal(sig)
+        previous_handlers[sig] = previous_handler
+
+        def handler(signum, frame, previous_handler=previous_handler):
+            stop_streams()
+
+            if callable(previous_handler):
+                previous_handler(signum, frame)
+
+        signal.signal(sig, handler)
+
+    return previous_handlers
+
+
+def restore_shutdown_signal_handlers(previous_handlers):
+    if current_thread() is not main_thread():
+        return
+
+    for sig, previous_handler in previous_handlers.items():
+        signal.signal(sig, previous_handler)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global picam2, camera_error
+
+    stream_stop.clear()
+    previous_signal_handlers = install_shutdown_signal_handlers()
 
     try:
         picam2 = Picamera2()
@@ -73,9 +115,13 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    stop_streams()
+
     if picam2 is not None:
         picam2.stop_recording()
         picam2.close()
+
+    restore_shutdown_signal_handlers(previous_signal_handlers)
 
 
 app = FastAPI(
@@ -126,10 +172,23 @@ def status():
 
 
 def generate_mjpeg():
-    while True:
+    last_sequence = 0
+
+    while not stream_stop.is_set():
         with output.condition:
-            output.condition.wait()
+            output.condition.wait_for(
+                lambda: stream_stop.is_set()
+                or (
+                    output.frame is not None
+                    and output.sequence != last_sequence
+                )
+            )
+
+            if stream_stop.is_set():
+                return
+
             frame = output.frame
+            last_sequence = output.sequence
 
         yield (
             b"--FRAME\r\n"
