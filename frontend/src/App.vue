@@ -9,6 +9,26 @@ const framerate = ref(null)
 
 let exposureTimer = null
 
+function formatExposureTime(exposureTimeUs) {
+  if (exposureTimeUs == null) {
+    return '—'
+  }
+
+  if (exposureTimeUs >= 1000) {
+    return `${Math.round(exposureTimeUs / 1000)} ms`
+  }
+
+  return `${Math.round(exposureTimeUs)} µs`
+}
+
+function formatDigitalGain(gain) {
+  if (gain == null) {
+    return '—'
+  }
+
+  return Number(gain).toFixed(1)
+}
+
 async function stepExposure(factor) {
   const response = await fetch('/api/exposure/step', {
     method: 'PUT',
@@ -196,9 +216,9 @@ onUnmounted(() => {
 
       </div>
       <p>
-        Exposure: {{ exposure.exposure_time_us }} µs<br>
+        Exposure: {{ formatExposureTime(exposure.exposure_time_us) }}<br>
         Analogue gain: {{ exposure.analogue_gain }}<br>
-        Digital gain: {{ exposure.digital_gain }}
+        Digital gain: {{ formatDigitalGain(exposure.digital_gain) }}
       </p>
     </section>
 
