@@ -179,6 +179,33 @@ def poweroff_pi():
     )
 
 
+def get_system_identity():
+    hostname = subprocess.run(
+        ["hostname"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+
+    addresses = subprocess.run(
+        ["hostname", "-I"],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.split()
+
+    ip_address = next(
+        (
+            address
+            for address in addresses
+            if "." in address and not address.startswith("127.")
+        ),
+        None,
+    )
+
+    return hostname or None, ip_address
+
+
 def install_shutdown_signal_handlers():
     if current_thread() is not main_thread():
         return {}
@@ -281,10 +308,14 @@ def status():
             },
         }
 
+    hostname, ip_address = get_system_identity()
+
     return {
         "status": "ok",
         "camera": {
             "connected": True,
+            "hostname": hostname,
+            "ip_address": ip_address,
             "model": picam2.camera_properties.get("Model", "unknown"),
         },
     }
