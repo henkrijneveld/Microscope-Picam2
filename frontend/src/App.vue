@@ -196,7 +196,9 @@ onUnmounted(() => {
 
       </div>
       <p>
-        Exposure: {{ exposure.exposure_time_us }} µs
+        Exposure: {{ exposure.exposure_time_us }} µs<br>
+        Analogue gain: {{ exposure.analogue_gain }}<br>
+        Digital gain: {{ exposure.digital_gain }}
       </p>
     </section>
 
