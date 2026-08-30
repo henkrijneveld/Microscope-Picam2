@@ -196,9 +196,9 @@ async function takePhoto() {
   } catch (exc) {
     photoError.value = exc.message
   } finally {
-    await loadPhotoStatus()
     stopPhotoStatusPolling()
     photoBusy.value = false
+    photoProgress.value = null
     await loadExposure()
     await loadFramerate()
     await loadWhiteBalance()
@@ -738,7 +738,7 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div v-if="photoProgress?.aeb && (photoBusy || photoProgress.state === 'complete')">
+        <div v-if="photoBusy && photoProgress?.aeb">
           <p>
             AEB opname
             <template v-if="photoProgress.step > 0">
@@ -750,9 +750,6 @@ onUnmounted(() => {
             :value="photoProgress.step"
             :max="photoProgress.total || 3"
           ></progress>
-          <p v-if="photoProgress.state === 'complete'">
-            AEB gereed
-          </p>
         </div>
 
         <div v-if="lastSavedFiles.length > 0">
