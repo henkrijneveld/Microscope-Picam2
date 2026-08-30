@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import re
 import signal
 import subprocess
@@ -29,10 +30,28 @@ FRONTEND_DIST = PROJECT_DIR / "frontend" / "dist"
 POWEROFF_HELPER = Path("/usr/local/sbin/microscope-picam2-poweroff")
 
 AEB_TIMEOUT_SECONDS = 5.0
+
+
+def get_aeb_stops():
+    raw_value = os.environ.get("AEB_STOPS", "2").strip().replace(",", ".")
+
+    try:
+        stops = float(raw_value)
+    except ValueError as exc:
+        raise RuntimeError("AEB_STOPS must be a number") from exc
+
+    if stops <= 0:
+        raise RuntimeError("AEB_STOPS must be greater than 0")
+
+    return stops
+
+
+AEB_STOPS = get_aeb_stops()
+AEB_STOP_LABEL = f"{AEB_STOPS:g}"
 AEB_STEPS = (
-    (-2, 0.25, "min2"),
+    (-AEB_STOPS, 2 ** -AEB_STOPS, f"min{AEB_STOP_LABEL}"),
     (0, 1.0, "0"),
-    (2, 4.0, "plus2"),
+    (AEB_STOPS, 2 ** AEB_STOPS, f"plus{AEB_STOP_LABEL}"),
 )
 
 
@@ -428,7 +447,7 @@ def build_photo_metadata(
     captured_metadata: dict,
     *,
     aeb: bool,
-    aeb_ev: int | None = None,
+    aeb_ev: float | None = None,
     base_exposure_us: int | None = None,
 ):
     active_colour_gains = captured_metadata.get("ColourGains")
