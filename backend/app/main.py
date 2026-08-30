@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from threading import Condition, Event, Lock, current_thread, main_thread
+from time import monotonic
 
 import piexif
 import piexif.helper
@@ -26,6 +27,13 @@ LIVE_SENSOR_SIZE = (2028, 1520)
 PHOTO_DIR = PROJECT_DIR / "photos"
 FRONTEND_DIST = PROJECT_DIR / "frontend" / "dist"
 POWEROFF_HELPER = Path("/usr/local/sbin/microscope-picam2-poweroff")
+
+AEB_TIMEOUT_SECONDS = 5.0
+AEB_STEPS = (
+    (-2, 0.25, "m2"),
+    (0, 1.0, "0"),
+    (2, 4.0, "p2"),
+)
 
 
 class StreamingOutput(io.BufferedIOBase):
@@ -47,7 +55,17 @@ output = StreamingOutput()
 stream_stop = Event()
 camera_lock = Lock()
 metadata_lock = Lock()
+capture_status_lock = Lock()
 latest_metadata: dict = {}
+capture_status: dict = {
+    "active": False,
+    "aeb": False,
+    "step": 0,
+    "total": 0,
+    "ev": None,
+    "state": "idle",
+    "error": None,
+}
 exposure_auto = True
 exposure_value = 0.0
 manual_exposure_time_us: int | None = None
@@ -78,6 +96,7 @@ class FrameRateSettings(BaseModel):
 
 class PhotoSettings(BaseModel):
     name: str
+    aeb: bool = False
 
 
 class WhiteBalanceSettings(BaseModel):
@@ -110,6 +129,16 @@ def cache_camera_metadata(request):
 def get_latest_metadata():
     with metadata_lock:
         return latest_metadata.copy()
+
+
+def set_capture_status(**changes):
+    with capture_status_lock:
+        capture_status.update(changes)
+
+
+def get_capture_status():
+    with capture_status_lock:
+        return capture_status.copy()
 
 
 def sanitize_photo_name(name: str):
@@ -164,6 +193,30 @@ def embed_photo_metadata(jpeg_data: bytes, photo_metadata: dict, safe_name: str)
     piexif.insert(exif_bytes, jpeg_data, output_file)
 
     return output_file.getvalue()
+
+
+def wait_for_exposure(target_exposure_us: int):
+    if picam2 is None:
+        raise RuntimeError("Camera not available")
+
+    deadline = monotonic() + AEB_TIMEOUT_SECONDS
+    tolerance = max(100, round(target_exposure_us * 0.02))
+    last_exposure = None
+
+    while monotonic() < deadline:
+        metadata = picam2.capture_metadata()
+        last_exposure = metadata.get("ExposureTime")
+
+        if (
+            last_exposure is not None
+            and abs(int(last_exposure) - target_exposure_us) <= tolerance
+        ):
+            return metadata
+
+    raise TimeoutError(
+        f"Exposure did not stabilise at {target_exposure_us} us "
+        f"within {AEB_TIMEOUT_SECONDS:.0f} seconds; last value was {last_exposure} us"
+    )
 
 
 def stop_streams():
@@ -362,6 +415,87 @@ def stream():
     )
 
 
+@app.get("/api/photo/status")
+def photo_status():
+    return get_capture_status()
+
+
+def build_photo_metadata(
+    requested_name: str,
+    filename: str,
+    capture_time: datetime,
+    still_config: dict,
+    captured_metadata: dict,
+    *,
+    aeb: bool,
+    aeb_ev: int | None = None,
+    base_exposure_us: int | None = None,
+):
+    active_colour_gains = captured_metadata.get("ColourGains")
+
+    return {
+        "microscope_picam2": {
+            "name": requested_name,
+            "filename": filename,
+            "capture_time": capture_time.isoformat(timespec="seconds"),
+            "camera_model": picam2.camera_properties.get("Model", "unknown") if picam2 else "unknown",
+            "stream_resolution": list(LIVE_SIZE),
+            "still_resolution": list(still_config["main"]["size"]),
+            "jpeg_quality": picam2.options.get("quality", 90) if picam2 else 90,
+            "frame_rate_fps": frame_rate,
+            "exposure_auto": exposure_auto,
+            "exposure_value_ev": exposure_value if exposure_auto else None,
+            "white_balance_mode": "auto" if white_balance_auto else "single_shot",
+            "white_balance_red_gain": (
+                active_colour_gains[0]
+                if active_colour_gains is not None
+                else None
+            ),
+            "white_balance_blue_gain": (
+                active_colour_gains[1]
+                if active_colour_gains is not None
+                else None
+            ),
+            "aeb": aeb,
+            "aeb_ev": aeb_ev,
+            "aeb_base_exposure_us": base_exposure_us,
+        },
+        "camera_metadata": captured_metadata,
+    }
+
+
+def restore_live_view(preview_config: dict, current_exposure):
+    if picam2 is None:
+        return
+
+    picam2.switch_mode(preview_config)
+
+    frame_duration_us = round(1_000_000 / frame_rate)
+    restore_controls = {
+        "AeEnable": exposure_auto,
+        "FrameDurationLimits": (
+            frame_duration_us,
+            frame_duration_us,
+        ),
+    }
+
+    if exposure_auto:
+        restore_controls["ExposureValue"] = exposure_value
+    elif manual_exposure_time_us is not None:
+        restore_controls["ExposureTime"] = manual_exposure_time_us
+    elif current_exposure is not None:
+        restore_controls["ExposureTime"] = current_exposure
+
+    if white_balance_auto:
+        restore_controls["AwbEnable"] = True
+    elif white_balance_gains is not None:
+        restore_controls["AwbEnable"] = False
+        restore_controls["ColourGains"] = white_balance_gains
+
+    picam2.set_controls(restore_controls)
+    start_stream_encoder()
+
+
 @app.post("/api/photo")
 def take_photo(settings: PhotoSettings):
     if picam2 is None:
@@ -376,123 +510,245 @@ def take_photo(settings: PhotoSettings):
             detail="Photo name is required",
         )
 
-    with camera_lock:
-        capture_time = datetime.now()
-        base_filename = f"{capture_time.strftime('%y%m%d-%H%M%S')}-{safe_name}.jpg"
-        photo_path = get_unique_photo_path(base_filename)
-        filename = photo_path.name
+    set_capture_status(
+        active=True,
+        aeb=settings.aeb,
+        step=0,
+        total=3 if settings.aeb else 1,
+        ev=None,
+        state="starting",
+        error=None,
+    )
 
-        metadata = get_latest_metadata()
+    try:
+        with camera_lock:
+            capture_time = datetime.now()
+            timestamp = capture_time.strftime("%y%m%d-%H%M%S")
+            metadata = get_latest_metadata()
 
-        if not metadata:
-            metadata = picam2.capture_metadata()
+            if not metadata:
+                metadata = picam2.capture_metadata()
 
-        current_exposure = metadata.get("ExposureTime")
-        current_colour_gains = metadata.get("ColourGains")
+            current_exposure = metadata.get("ExposureTime")
+            current_gain = metadata.get("AnalogueGain")
+            current_colour_gains = metadata.get("ColourGains")
 
-        still_controls = {
-            "AeEnable": exposure_auto,
-        }
+            if current_exposure is None:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Current exposure time unavailable",
+                )
 
-        if exposure_auto:
-            still_controls["ExposureValue"] = exposure_value
-        elif manual_exposure_time_us is not None:
-            still_controls["ExposureTime"] = manual_exposure_time_us
-        elif current_exposure is not None:
-            still_controls["ExposureTime"] = current_exposure
+            preview_config = picam2.camera_configuration()
 
-        # Freeze the current live-view white balance for the still image. This
-        # prevents a mode switch from starting a fresh AWB calculation.
-        if white_balance_auto and current_colour_gains is not None:
-            still_controls["AwbEnable"] = False
-            still_controls["ColourGains"] = tuple(current_colour_gains)
-        elif not white_balance_auto and white_balance_gains is not None:
-            still_controls["AwbEnable"] = False
-            still_controls["ColourGains"] = white_balance_gains
-        else:
-            still_controls["AwbEnable"] = True
+            if settings.aeb:
+                if current_gain is None:
+                    raise HTTPException(
+                        status_code=500,
+                        detail="Current analogue gain unavailable",
+                    )
 
-        still_config = picam2.create_still_configuration(
-            controls=still_controls,
+                still_controls = {
+                    "AeEnable": False,
+                    "ExposureTime": int(current_exposure),
+                    "AnalogueGain": float(current_gain),
+                }
+            else:
+                still_controls = {
+                    "AeEnable": exposure_auto,
+                }
+
+                if exposure_auto:
+                    still_controls["ExposureValue"] = exposure_value
+                elif manual_exposure_time_us is not None:
+                    still_controls["ExposureTime"] = manual_exposure_time_us
+                else:
+                    still_controls["ExposureTime"] = current_exposure
+
+            # Freeze the current live-view white balance for the still image(s).
+            if white_balance_auto and current_colour_gains is not None:
+                still_controls["AwbEnable"] = False
+                still_controls["ColourGains"] = tuple(current_colour_gains)
+            elif not white_balance_auto and white_balance_gains is not None:
+                still_controls["AwbEnable"] = False
+                still_controls["ColourGains"] = white_balance_gains
+            else:
+                still_controls["AwbEnable"] = True
+
+            still_config = picam2.create_still_configuration(
+                controls=still_controls,
+            )
+
+            picam2.stop_encoder()
+
+            try:
+                if settings.aeb:
+                    picam2.switch_mode(still_config)
+                    exposure_min, exposure_max, _ = picam2.camera_controls["ExposureTime"]
+                    files = []
+
+                    for index, (ev, factor, label) in enumerate(AEB_STEPS, start=1):
+                        target_exposure = round(int(current_exposure) * factor)
+                        target_exposure = max(
+                            exposure_min,
+                            min(target_exposure, exposure_max),
+                        )
+
+                        set_capture_status(
+                            active=True,
+                            aeb=True,
+                            step=index,
+                            total=3,
+                            ev=ev,
+                            state="stabilising",
+                            error=None,
+                        )
+
+                        picam2.set_controls({
+                            "AeEnable": False,
+                            "ExposureTime": target_exposure,
+                            "AnalogueGain": float(current_gain),
+                        })
+
+                        try:
+                            wait_for_exposure(target_exposure)
+                        except TimeoutError as exc:
+                            raise HTTPException(status_code=504, detail=str(exc)) from exc
+
+                        set_capture_status(state="capturing")
+
+                        photo = io.BytesIO()
+                        captured_metadata = picam2.capture_file(
+                            photo,
+                            format="jpeg",
+                        )
+                        actual_exposure = int(
+                            captured_metadata.get("ExposureTime", target_exposure)
+                        )
+
+                        base_filename = (
+                            f"{timestamp}-{safe_name}-AEB-{label}-{actual_exposure}us.jpg"
+                        )
+                        photo_path = get_unique_photo_path(base_filename)
+                        filename = photo_path.name
+
+                        photo_metadata = build_photo_metadata(
+                            requested_name,
+                            filename,
+                            capture_time,
+                            still_config,
+                            captured_metadata,
+                            aeb=True,
+                            aeb_ev=ev,
+                            base_exposure_us=int(current_exposure),
+                        )
+                        photo_data = embed_photo_metadata(
+                            photo.getvalue(),
+                            photo_metadata,
+                            safe_name,
+                        )
+                        photo_path.write_bytes(photo_data)
+                        files.append({
+                            "filename": filename,
+                            "size_bytes": len(photo_data),
+                            "ev": ev,
+                            "exposure_time_us": actual_exposure,
+                        })
+
+                    result = {
+                        "aeb": True,
+                        "filenames": [item["filename"] for item in files],
+                        "files": files,
+                    }
+                else:
+                    set_capture_status(
+                        active=True,
+                        aeb=False,
+                        step=1,
+                        total=1,
+                        ev=None,
+                        state="capturing",
+                        error=None,
+                    )
+
+                    photo = io.BytesIO()
+                    captured_metadata = picam2.switch_mode_and_capture_file(
+                        still_config,
+                        photo,
+                        format="jpeg",
+                    )
+
+                    base_filename = f"{timestamp}-{safe_name}.jpg"
+                    photo_path = get_unique_photo_path(base_filename)
+                    filename = photo_path.name
+                    photo_metadata = build_photo_metadata(
+                        requested_name,
+                        filename,
+                        capture_time,
+                        still_config,
+                        captured_metadata,
+                        aeb=False,
+                    )
+                    photo_data = embed_photo_metadata(
+                        photo.getvalue(),
+                        photo_metadata,
+                        safe_name,
+                    )
+                    photo_path.write_bytes(photo_data)
+                    result = {
+                        "aeb": False,
+                        "filename": filename,
+                        "size_bytes": len(photo_data),
+                    }
+            finally:
+                if settings.aeb:
+                    restore_live_view(preview_config, current_exposure)
+                else:
+                    frame_duration_us = round(1_000_000 / frame_rate)
+                    restore_controls = {
+                        "AeEnable": exposure_auto,
+                        "FrameDurationLimits": (
+                            frame_duration_us,
+                            frame_duration_us,
+                        ),
+                    }
+
+                    if exposure_auto:
+                        restore_controls["ExposureValue"] = exposure_value
+                    elif manual_exposure_time_us is not None:
+                        restore_controls["ExposureTime"] = manual_exposure_time_us
+                    else:
+                        restore_controls["ExposureTime"] = current_exposure
+
+                    if white_balance_auto:
+                        restore_controls["AwbEnable"] = True
+                    elif white_balance_gains is not None:
+                        restore_controls["AwbEnable"] = False
+                        restore_controls["ColourGains"] = white_balance_gains
+
+                    picam2.set_controls(restore_controls)
+                    start_stream_encoder()
+
+        set_capture_status(
+            active=False,
+            state="complete",
+            error=None,
         )
-
-        photo = io.BytesIO()
-
-        picam2.stop_encoder()
-
-        try:
-            captured_metadata = picam2.switch_mode_and_capture_file(
-                still_config,
-                photo,
-                format="jpeg",
-            )
-
-            active_colour_gains = captured_metadata.get("ColourGains")
-
-            photo_metadata = {
-                "microscope_picam2": {
-                    "name": requested_name,
-                    "filename": filename,
-                    "capture_time": capture_time.isoformat(timespec="seconds"),
-                    "camera_model": picam2.camera_properties.get("Model", "unknown"),
-                    "stream_resolution": list(LIVE_SIZE),
-                    "still_resolution": list(still_config["main"]["size"]),
-                    "jpeg_quality": picam2.options.get("quality", 90),
-                    "frame_rate_fps": frame_rate,
-                    "exposure_auto": exposure_auto,
-                    "exposure_value_ev": exposure_value if exposure_auto else None,
-                    "white_balance_mode": "auto" if white_balance_auto else "single_shot",
-                    "white_balance_red_gain": (
-                        active_colour_gains[0]
-                        if active_colour_gains is not None
-                        else None
-                    ),
-                    "white_balance_blue_gain": (
-                        active_colour_gains[1]
-                        if active_colour_gains is not None
-                        else None
-                    ),
-                },
-                "camera_metadata": captured_metadata,
-            }
-
-            photo_data = embed_photo_metadata(
-                photo.getvalue(),
-                photo_metadata,
-                safe_name,
-            )
-            photo_path.write_bytes(photo_data)
-        finally:
-            frame_duration_us = round(1_000_000 / frame_rate)
-
-            restore_controls = {
-                "AeEnable": exposure_auto,
-                "FrameDurationLimits": (
-                    frame_duration_us,
-                    frame_duration_us,
-                ),
-            }
-
-            if exposure_auto:
-                restore_controls["ExposureValue"] = exposure_value
-            elif manual_exposure_time_us is not None:
-                restore_controls["ExposureTime"] = manual_exposure_time_us
-            elif current_exposure is not None:
-                restore_controls["ExposureTime"] = current_exposure
-
-            if white_balance_auto:
-                restore_controls["AwbEnable"] = True
-            elif white_balance_gains is not None:
-                restore_controls["AwbEnable"] = False
-                restore_controls["ColourGains"] = white_balance_gains
-
-            picam2.set_controls(restore_controls)
-            start_stream_encoder()
-
-        return {
-            "filename": filename,
-            "size_bytes": len(photo_data),
-        }
+        return result
+    except HTTPException as exc:
+        set_capture_status(
+            active=False,
+            state="error",
+            error=exc.detail,
+        )
+        raise
+    except Exception as exc:
+        set_capture_status(
+            active=False,
+            state="error",
+            error=str(exc),
+        )
+        raise
 
 
 @app.get("/api/files")
