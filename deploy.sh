@@ -52,6 +52,13 @@ rsync -az --delete \
   frontend/dist/ \
   "$PI_HOST:~/$DEPLOY_DIR/frontend/dist/"
 
+if [ -f "$ENV_FILE" ]; then
+  echo "Lokale configuratie deployen..."
+  rsync -az \
+    "$ENV_FILE" \
+    "$PI_HOST:~/$DEPLOY_DIR/frontend/.env.local"
+fi
+
 echo "Start-, stop- en installatiescripts deployen..."
 rsync -az \
   runback.sh \
