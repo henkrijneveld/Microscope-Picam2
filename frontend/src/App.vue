@@ -15,7 +15,9 @@ const whiteBalanceError = ref(null)
 const photoBusy = ref(false)
 const photoError = ref(null)
 const photoName = ref('microscope')
-const lastSavedFile = ref(null)
+const aebEnabled = ref(false)
+const photoProgress = ref(null)
+const lastSavedFiles = ref([])
 const shutdownBusy = ref(false)
 const shutdownError = ref(null)
 const shuttingDown = ref(false)
@@ -37,6 +39,7 @@ const exposureValues = [
 
 let exposureTimer = null
 let whiteBalanceTimer = null
+let photoStatusTimer = null
 let cameraControlVersion = 0
 
 function formatExposureTime(exposureTimeUs) {
@@ -75,6 +78,18 @@ function formatFileSize(sizeBytes) {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function formatAebEv(ev) {
+  if (ev == null) {
+    return ''
+  }
+
+  if (ev > 0) {
+    return `+${ev} EV`
+  }
+
+  return `${ev} EV`
+}
+
 function fileDownloadUrl(filename) {
   return `/api/files/${encodeURIComponent(filename)}`
 }
@@ -105,6 +120,43 @@ function stopCameraPolling() {
   }
 }
 
+async function loadPhotoStatus() {
+  try {
+    const response = await fetch('/api/photo/status')
+
+    if (!response.ok) {
+      return
+    }
+
+    photoProgress.value = await response.json()
+  } catch (_) {
+    // De opname zelf bepaalt of er werkelijk een fout is.
+  }
+}
+
+function startPhotoStatusPolling() {
+  if (!photoStatusTimer) {
+    loadPhotoStatus()
+    photoStatusTimer = setInterval(loadPhotoStatus, 250)
+  }
+}
+
+function stopPhotoStatusPolling() {
+  if (photoStatusTimer) {
+    clearInterval(photoStatusTimer)
+    photoStatusTimer = null
+  }
+}
+
+async function getResponseError(response) {
+  try {
+    const result = await response.json()
+    return result.detail || `HTTP ${response.status}`
+  } catch (_) {
+    return `HTTP ${response.status}`
+  }
+}
+
 async function runCameraControl(action) {
   cameraControlVersion += 1
   cameraControlBusy.value = true
@@ -119,7 +171,9 @@ async function runCameraControl(action) {
 async function takePhoto() {
   photoBusy.value = true
   photoError.value = null
-  lastSavedFile.value = null
+  lastSavedFiles.value = []
+  photoProgress.value = null
+  startPhotoStatusPolling()
 
   try {
     const response = await fetch('/api/photo', {
@@ -129,18 +183,21 @@ async function takePhoto() {
       },
       body: JSON.stringify({
         name: photoName.value,
+        aeb: aebEnabled.value,
       }),
     })
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+      throw new Error(await getResponseError(response))
     }
 
     const result = await response.json()
-    lastSavedFile.value = result.filename
+    lastSavedFiles.value = result.aeb ? result.filenames : [result.filename]
   } catch (exc) {
     photoError.value = exc.message
   } finally {
+    await loadPhotoStatus()
+    stopPhotoStatusPolling()
     photoBusy.value = false
     await loadExposure()
     await loadFramerate()
@@ -229,6 +286,7 @@ async function loadExposure() {
 async function loadFramerate() {
   if (
     currentPage.value !== 'camera'
+    || photoBusy.value
     || cameraControlBusy.value
     || shuttingDown.value
     || !status.value?.camera?.connected
@@ -472,6 +530,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('hashchange', handlePageChange)
   stopCameraPolling()
+  stopPhotoStatusPolling()
 })
 </script>
 
@@ -536,7 +595,7 @@ onUnmounted(() => {
         <button
           v-for="fps in framerate.options"
           :key="fps"
-          :disabled="cameraControlBusy || framerate.fps === fps"
+          :disabled="cameraControlBusy || photoBusy || framerate.fps === fps"
           @click="setFramerate(fps)"
         >
           {{ fps }} fps
@@ -551,14 +610,14 @@ onUnmounted(() => {
         <h2>Exposure</h2>
 
         <button
-          :disabled="cameraControlBusy || exposure.auto"
+          :disabled="cameraControlBusy || photoBusy || exposure.auto"
           @click="setExposureAuto(true)"
         >
           Auto
         </button>
 
         <button
-          :disabled="cameraControlBusy || !exposure.auto"
+          :disabled="cameraControlBusy || photoBusy || !exposure.auto"
           @click="setExposureAuto(false)"
         >
           Manual
@@ -568,7 +627,7 @@ onUnmounted(() => {
           <button
             v-for="item in exposureValues"
             :key="item.value"
-            :disabled="cameraControlBusy || !exposure.auto || exposure.exposure_value === item.value"
+            :disabled="cameraControlBusy || photoBusy || !exposure.auto || exposure.exposure_value === item.value"
             @click="setExposureValue(item.value)"
           >
             {{ item.label }}
@@ -577,28 +636,28 @@ onUnmounted(() => {
 
         <div>
           <button
-            :disabled="cameraControlBusy || exposure.auto"
+            :disabled="cameraControlBusy || photoBusy || exposure.auto"
             @click="stepExposure(1 / 4)"
           >
             1/4
           </button>
 
           <button
-            :disabled="cameraControlBusy || exposure.auto"
+            :disabled="cameraControlBusy || photoBusy || exposure.auto"
             @click="stepExposure(1 / 2)"
           >
             1/2
           </button>
 
           <button
-            :disabled="cameraControlBusy || exposure.auto"
+            :disabled="cameraControlBusy || photoBusy || exposure.auto"
             @click="stepExposure(2)"
           >
             2×
           </button>
 
           <button
-            :disabled="cameraControlBusy || exposure.auto"
+            :disabled="cameraControlBusy || photoBusy || exposure.auto"
             @click="stepExposure(4)"
           >
             4×
@@ -616,14 +675,14 @@ onUnmounted(() => {
         <h2>White balance</h2>
 
         <button
-          :disabled="whiteBalanceBusy || whiteBalance.auto"
+          :disabled="whiteBalanceBusy || photoBusy || whiteBalance.auto"
           @click="setWhiteBalanceAuto"
         >
           Auto
         </button>
 
         <button
-          :disabled="whiteBalanceBusy"
+          :disabled="whiteBalanceBusy || photoBusy"
           @click="setWhiteBalanceSingle"
         >
           {{ whiteBalanceBusy ? 'Witbalans meten...' : 'Set white balance' }}
@@ -655,17 +714,58 @@ onUnmounted(() => {
         </label>
 
         <div>
+          AEB:
+          <button
+            :disabled="photoBusy || !aebEnabled"
+            @click="aebEnabled = false"
+          >
+            Nee
+          </button>
+          <button
+            :disabled="photoBusy || aebEnabled"
+            @click="aebEnabled = true"
+          >
+            Ja
+          </button>
+        </div>
+
+        <div>
           <button
             :disabled="photoBusy || !photoName.trim()"
             @click="takePhoto"
           >
-            {{ photoBusy ? 'Foto maken...' : 'Foto nemen' }}
+            {{ photoBusy ? (aebEnabled ? 'AEB maken...' : 'Foto maken...') : 'Foto nemen' }}
           </button>
         </div>
 
-        <p v-if="lastSavedFile">
-          Opgeslagen op de Pi: {{ lastSavedFile }}
-        </p>
+        <div v-if="photoProgress?.aeb && (photoBusy || photoProgress.state === 'complete')">
+          <p>
+            AEB opname
+            <template v-if="photoProgress.step > 0">
+              {{ photoProgress.step }}/{{ photoProgress.total }}
+              {{ formatAebEv(photoProgress.ev) }}
+            </template>
+          </p>
+          <progress
+            :value="photoProgress.step"
+            :max="photoProgress.total || 3"
+          ></progress>
+          <p v-if="photoProgress.state === 'complete'">
+            AEB gereed
+          </p>
+        </div>
+
+        <div v-if="lastSavedFiles.length > 0">
+          <p>Opgeslagen op de Pi:</p>
+          <ul>
+            <li
+              v-for="filename in lastSavedFiles"
+              :key="filename"
+            >
+              {{ filename }}
+            </li>
+          </ul>
+        </div>
 
         <p v-if="photoError">
           Fout bij foto: {{ photoError }}
