@@ -13,3 +13,4 @@ fi
 
 enfuse -o "${name}.jpg" "${inputs[@]}"
 
+# install enfuse with: sudo apt install enfuse
