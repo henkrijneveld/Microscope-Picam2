@@ -487,8 +487,6 @@ def restore_live_view(preview_config: dict, current_exposure):
     if picam2 is None:
         return
 
-    picam2.switch_mode(preview_config)
-
     frame_duration_us = round(1_000_000 / frame_rate)
     restore_controls = {
         "AeEnable": exposure_auto,
@@ -511,7 +509,18 @@ def restore_live_view(preview_config: dict, current_exposure):
         restore_controls["AwbEnable"] = False
         restore_controls["ColourGains"] = white_balance_gains
 
+    preview_controls = preview_config.get("controls")
+    if hasattr(preview_controls, "set_controls"):
+        preview_controls.set_controls(restore_controls)
+    else:
+        preview_config["controls"] = {
+            **(preview_controls or {}),
+            **restore_controls,
+        }
+
+    picam2.switch_mode(preview_config)
     picam2.set_controls(restore_controls)
+    picam2.capture_metadata()
     start_stream_encoder()
 
 
