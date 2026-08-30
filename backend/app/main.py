@@ -30,9 +30,9 @@ POWEROFF_HELPER = Path("/usr/local/sbin/microscope-picam2-poweroff")
 
 AEB_TIMEOUT_SECONDS = 5.0
 AEB_STEPS = (
-    (-2, 0.25, "m2"),
+    (-2, 0.25, "min2"),
     (0, 1.0, "0"),
-    (2, 4.0, "p2"),
+    (2, 4.0, "plus2"),
 )
 
 
@@ -626,9 +626,7 @@ def take_photo(settings: PhotoSettings):
                             captured_metadata.get("ExposureTime", target_exposure)
                         )
 
-                        base_filename = (
-                            f"{timestamp}-{safe_name}-AEB-{label}-{actual_exposure}us.jpg"
-                        )
+                        base_filename = f"{timestamp}-{safe_name}-AEB-{label}.jpg"
                         photo_path = get_unique_photo_path(base_filename)
                         filename = photo_path.name
 
