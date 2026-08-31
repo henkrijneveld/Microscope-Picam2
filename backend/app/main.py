@@ -72,6 +72,9 @@ SATURATION_FACTOR = get_saturation_factor()
 SATURATION_MIN = 1 / SATURATION_FACTOR
 SATURATION_MAX = SATURATION_FACTOR
 
+AE_EXPOSURE_MODE_NORMAL = 0
+AE_EXPOSURE_MODE_LONG = 2
+
 
 class StreamingOutput(io.BufferedIOBase):
     def __init__(self):
@@ -147,6 +150,15 @@ class WhiteBalanceSettings(BaseModel):
 
 class ShutdownSettings(BaseModel):
     confirm: str
+
+
+def get_ae_exposure_mode(fps: int | None = None):
+    active_fps = frame_rate if fps is None else fps
+    return (
+        AE_EXPOSURE_MODE_NORMAL
+        if active_fps == 15
+        else AE_EXPOSURE_MODE_LONG
+    )
 
 
 def start_stream_encoder():
@@ -354,6 +366,7 @@ async def lifespan(app: FastAPI):
             },
             controls={
                 "FrameRate": 15,
+                "AeExposureMode": get_ae_exposure_mode(15),
                 "Saturation": saturation_value,
             },
         )
@@ -361,6 +374,7 @@ async def lifespan(app: FastAPI):
 
         picam2.set_controls({
             "AeEnable": True,
+            "AeExposureMode": get_ae_exposure_mode(15),
             "ExposureValue": exposure_value,
             "AwbEnable": True,
             "Saturation": saturation_value,
@@ -518,6 +532,7 @@ def restore_live_view(current_exposure):
     frame_duration_us = round(1_000_000 / frame_rate)
     restore_controls = {
         "AeEnable": exposure_auto,
+        "AeExposureMode": get_ae_exposure_mode(),
         "FrameDurationLimits": (
             frame_duration_us,
             frame_duration_us,
@@ -615,6 +630,7 @@ def take_photo(settings: PhotoSettings):
             else:
                 still_controls = {
                     "AeEnable": exposure_auto,
+                    "AeExposureMode": get_ae_exposure_mode(),
                     "Saturation": saturation_value,
                 }
 
@@ -844,6 +860,7 @@ def set_framerate(settings: FrameRateSettings):
     with camera_lock:
         picam2.set_controls({
             "FrameDurationLimits": (frame_duration_us, frame_duration_us),
+            "AeExposureMode": get_ae_exposure_mode(settings.fps),
         })
         frame_rate = settings.fps
 
@@ -932,6 +949,7 @@ def set_exposure(settings: ExposureSettings):
     }
 
     if settings.auto:
+        controls["AeExposureMode"] = get_ae_exposure_mode()
         controls["ExposureValue"] = exposure_value
     elif settings.exposure_time_us is not None:
         exposure_min, exposure_max, _ = picam2.camera_controls["ExposureTime"]
@@ -1078,6 +1096,7 @@ def set_white_balance(settings: WhiteBalanceSettings):
             },
             controls={
                 "FrameRate": frame_rate,
+                "AeExposureMode": get_ae_exposure_mode(),
                 "AwbEnable": True,
                 "AwbMode": 0,
                 "Saturation": saturation_value,
@@ -1087,10 +1106,21 @@ def set_white_balance(settings: WhiteBalanceSettings):
         picam2.configure(config)
 
         picam2.set_controls({
+            "AeEnable": exposure_auto,
+            "AeExposureMode": get_ae_exposure_mode(),
             "AwbEnable": True,
             "AwbMode": 0,
             "Saturation": saturation_value,
         })
+
+        if exposure_auto:
+            picam2.set_controls({
+                "ExposureValue": exposure_value,
+            })
+        elif manual_exposure_time_us is not None:
+            picam2.set_controls({
+                "ExposureTime": manual_exposure_time_us,
+            })
 
         picam2.start()
         start_stream_encoder()
