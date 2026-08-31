@@ -698,8 +698,9 @@ def take_photo(settings: PhotoSettings):
                     )
 
                     photo = io.BytesIO()
-                    captured_metadata = picam2.switch_mode_and_capture_file(
-                        still_config,
+                    picam2.switch_mode(still_config)
+
+                    captured_metadata = picam2.capture_file(
                         photo,
                         format="jpeg",
                     )
@@ -727,33 +728,7 @@ def take_photo(settings: PhotoSettings):
                         "size_bytes": len(photo_data),
                     }
             finally:
-                if settings.aeb:
-                    restore_live_view(preview_config, current_exposure)
-                else:
-                    frame_duration_us = round(1_000_000 / frame_rate)
-                    restore_controls = {
-                        "AeEnable": exposure_auto,
-                        "FrameDurationLimits": (
-                            frame_duration_us,
-                            frame_duration_us,
-                        ),
-                    }
-
-                    if exposure_auto:
-                        restore_controls["ExposureValue"] = exposure_value
-                    elif manual_exposure_time_us is not None:
-                        restore_controls["ExposureTime"] = manual_exposure_time_us
-                    else:
-                        restore_controls["ExposureTime"] = current_exposure
-
-                    if white_balance_auto:
-                        restore_controls["AwbEnable"] = True
-                    elif white_balance_gains is not None:
-                        restore_controls["AwbEnable"] = False
-                        restore_controls["ColourGains"] = white_balance_gains
-
-                    picam2.set_controls(restore_controls)
-                    start_stream_encoder()
+                restore_live_view(preview_config, current_exposure)
 
         set_capture_status(
             active=False,
@@ -1006,20 +981,40 @@ def get_white_balance():
 @app.put("/api/whitebalance")
 def set_white_balance(settings: WhiteBalanceSettings):
     global white_balance_auto, white_balance_gains
-
     if picam2 is None:
         raise HTTPException(status_code=503, detail="Camera not available")
-
     if not settings.auto:
         raise HTTPException(
             status_code=400,
             detail="Use single-shot white balance to set a fixed white balance",
         )
-
     with camera_lock:
+        picam2.stop_encoder()
+        picam2.stop()
+
+        config = picam2.create_video_configuration(
+            main={"size": LIVE_SIZE},
+            sensor={
+                "output_size": LIVE_SENSOR_SIZE,
+                "bit_depth": 12,
+            },
+            controls={
+                "FrameRate": frame_rate,
+                "AwbEnable": True,
+                "AwbMode": 0,
+            },
+        )
+
+        picam2.configure(config)
+
         picam2.set_controls({
             "AwbEnable": True,
+            "AwbMode": 0,
         })
+
+        picam2.start()
+        start_stream_encoder()
+
         white_balance_auto = True
         white_balance_gains = None
 
