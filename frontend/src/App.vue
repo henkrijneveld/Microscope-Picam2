@@ -819,12 +819,12 @@ onUnmounted(() => {
 
         <input
           :value="saturationPosition"
-          :disabled="photoBusy || shuttingDown"
+          :disabled="photoBusy || saturationBusy || shuttingDown"
           type="range"
           min="-100"
           max="100"
           step="1"
-          @input="queueSaturation"
+          @change="queueSaturation"
         >
 
         <p>
