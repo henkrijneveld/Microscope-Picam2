@@ -511,7 +511,7 @@ def build_photo_metadata(
     }
 
 
-def restore_live_view(preview_config: dict, current_exposure):
+def restore_live_view(current_exposure):
     if picam2 is None:
         return
 
@@ -538,14 +538,18 @@ def restore_live_view(preview_config: dict, current_exposure):
         restore_controls["AwbEnable"] = False
         restore_controls["ColourGains"] = white_balance_gains
 
-    preview_controls = preview_config.get("controls")
-    if hasattr(preview_controls, "set_controls"):
-        preview_controls.set_controls(restore_controls)
-    else:
-        preview_config["controls"] = {
-            **(preview_controls or {}),
-            **restore_controls,
-        }
+    # Recreate the live configuration instead of reusing camera_configuration().
+    # Picamera2 replaces its controls object while configuring/switching modes;
+    # starting from a fresh video configuration keeps later set_controls calls
+    # (including Saturation) connected to the running preview pipeline.
+    preview_config = picam2.create_video_configuration(
+        main={"size": LIVE_SIZE},
+        sensor={
+            "output_size": LIVE_SENSOR_SIZE,
+            "bit_depth": 12,
+        },
+        controls=restore_controls,
+    )
 
     picam2.switch_mode(preview_config)
     picam2.set_controls(restore_controls)
@@ -595,8 +599,6 @@ def take_photo(settings: PhotoSettings):
                     status_code=500,
                     detail="Current exposure time unavailable",
                 )
-
-            preview_config = picam2.camera_configuration()
 
             if settings.aeb:
                 if current_gain is None:
@@ -759,7 +761,7 @@ def take_photo(settings: PhotoSettings):
                         "size_bytes": len(photo_data),
                     }
             finally:
-                restore_live_view(preview_config, current_exposure)
+                restore_live_view(current_exposure)
 
         set_capture_status(
             active=False,
