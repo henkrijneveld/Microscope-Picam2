@@ -538,10 +538,9 @@ def restore_live_view(current_exposure):
         restore_controls["AwbEnable"] = False
         restore_controls["ColourGains"] = white_balance_gains
 
-    # Recreate the live configuration instead of reusing camera_configuration().
-    # Picamera2 replaces its controls object while configuring/switching modes;
-    # starting from a fresh video configuration keeps later set_controls calls
-    # (including Saturation) connected to the running preview pipeline.
+    # Recreate the live configuration after a still-mode switch. On this
+    # pipeline Saturation must be part of the new configuration to keep
+    # affecting the ISP reliably after a photo capture.
     preview_config = picam2.create_video_configuration(
         main={"size": LIVE_SIZE},
         sensor={
@@ -885,10 +884,13 @@ def set_saturation(settings: SaturationSettings):
         )
 
     with camera_lock:
-        picam2.set_controls({
-            "Saturation": float(settings.value),
-        })
         saturation_value = float(settings.value)
+
+        metadata = get_latest_metadata()
+        current_exposure = metadata.get("ExposureTime")
+
+        picam2.stop_encoder()
+        restore_live_view(current_exposure)
 
     return {
         "value": saturation_value,
