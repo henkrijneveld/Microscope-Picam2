@@ -9,9 +9,13 @@ const error = ref(null)
 const exposure = ref(null)
 const framerate = ref(null)
 const whiteBalance = ref(null)
+const saturation = ref(null)
+const saturationPosition = ref(0)
 const cameraControlBusy = ref(false)
 const whiteBalanceBusy = ref(false)
 const whiteBalanceError = ref(null)
+const saturationBusy = ref(false)
+const saturationError = ref(null)
 const photoBusy = ref(false)
 const photoError = ref(null)
 const photoName = ref('microscope')
@@ -40,7 +44,9 @@ const exposureValues = [
 let exposureTimer = null
 let whiteBalanceTimer = null
 let photoStatusTimer = null
+let saturationTimer = null
 let cameraControlVersion = 0
+let saturationControlVersion = 0
 
 function formatExposureTime(exposureTimeUs) {
   if (exposureTimeUs == null) {
@@ -68,6 +74,30 @@ function formatColourGain(gain) {
   }
 
   return Number(gain).toFixed(2)
+}
+
+function formatSaturation(value) {
+  if (value == null) {
+    return '—'
+  }
+
+  return Number(value).toFixed(2)
+}
+
+function saturationValueFromPosition(position) {
+  if (!saturation.value?.factor) {
+    return 1
+  }
+
+  return saturation.value.factor ** (Number(position) / 100)
+}
+
+function saturationPositionFromValue(value, factor) {
+  if (!factor || factor === 1 || value == null) {
+    return 0
+  }
+
+  return Math.round((Math.log(value) / Math.log(factor)) * 100)
 }
 
 function formatFileSize(sizeBytes) {
@@ -202,6 +232,7 @@ async function takePhoto() {
     await loadExposure()
     await loadFramerate()
     await loadWhiteBalance()
+    await loadSaturation()
   }
 }
 
@@ -321,6 +352,82 @@ async function loadWhiteBalance() {
   }
 
   whiteBalance.value = await response.json()
+}
+
+async function loadSaturation() {
+  if (
+    currentPage.value !== 'camera'
+    || photoBusy.value
+    || saturationBusy.value
+    || shuttingDown.value
+    || !status.value?.camera?.connected
+  ) {
+    return
+  }
+
+  const response = await fetch('/api/saturation')
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
+  }
+
+  const result = await response.json()
+  saturation.value = result
+  saturationPosition.value = saturationPositionFromValue(result.value, result.factor)
+}
+
+async function setSaturation(position) {
+  if (!saturation.value) {
+    return
+  }
+
+  saturationControlVersion += 1
+  const requestVersion = saturationControlVersion
+  saturationBusy.value = true
+  saturationError.value = null
+  const value = saturationValueFromPosition(position)
+
+  try {
+    const response = await fetch('/api/saturation', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ value }),
+    })
+
+    if (!response.ok) {
+      throw new Error(await getResponseError(response))
+    }
+
+    const result = await response.json()
+
+    if (requestVersion === saturationControlVersion) {
+      saturation.value = result
+      saturationPosition.value = saturationPositionFromValue(result.value, result.factor)
+    }
+  } catch (exc) {
+    if (requestVersion === saturationControlVersion) {
+      saturationError.value = exc.message
+    }
+  } finally {
+    if (requestVersion === saturationControlVersion) {
+      saturationBusy.value = false
+    }
+  }
+}
+
+function queueSaturation(event) {
+  saturationPosition.value = Number(event.target.value)
+
+  if (saturationTimer) {
+    clearTimeout(saturationTimer)
+  }
+
+  saturationTimer = setTimeout(() => {
+    saturationTimer = null
+    setSaturation(saturationPosition.value)
+  }, 120)
 }
 
 async function loadFiles() {
@@ -503,6 +610,7 @@ async function loadCameraPage() {
       await loadExposure()
       await loadFramerate()
       await loadWhiteBalance()
+      await loadSaturation()
       startCameraPolling()
     }
   } catch (exc) {
@@ -531,6 +639,11 @@ onUnmounted(() => {
   window.removeEventListener('hashchange', handlePageChange)
   stopCameraPolling()
   stopPhotoStatusPolling()
+
+  if (saturationTimer) {
+    clearTimeout(saturationTimer)
+    saturationTimer = null
+  }
 })
 </script>
 
@@ -698,6 +811,33 @@ onUnmounted(() => {
 
         <p v-if="whiteBalanceError">
           Fout bij witbalans: {{ whiteBalanceError }}
+        </p>
+      </section>
+
+      <section v-if="saturation">
+        <h2>Verzadiging</h2>
+
+        <input
+          :value="saturationPosition"
+          :disabled="photoBusy || shuttingDown"
+          type="range"
+          min="-100"
+          max="100"
+          step="1"
+          @input="queueSaturation"
+        >
+
+        <p>
+          {{ formatSaturation(saturationValueFromPosition(saturationPosition)) }}×
+          <span v-if="saturationBusy"> instellen...</span>
+        </p>
+
+        <p>
+          Bereik: {{ formatSaturation(saturation.min) }}× – {{ formatSaturation(saturation.max) }}×
+        </p>
+
+        <p v-if="saturationError">
+          Fout bij verzadiging: {{ saturationError }}
         </p>
       </section>
 
