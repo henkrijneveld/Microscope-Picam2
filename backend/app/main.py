@@ -46,6 +46,20 @@ def get_aeb_stops():
     return stops
 
 
+def get_saturation_factor():
+    raw_value = os.environ.get("VITE_SATURATION_FACTOR", "1.5").strip().replace(",", ".")
+
+    try:
+        factor = float(raw_value)
+    except ValueError as exc:
+        raise RuntimeError("VITE_SATURATION_FACTOR must be a number") from exc
+
+    if factor <= 1:
+        raise RuntimeError("VITE_SATURATION_FACTOR must be greater than 1")
+
+    return factor
+
+
 AEB_STOPS = get_aeb_stops()
 AEB_STOP_LABEL = f"{AEB_STOPS:g}"
 AEB_STEPS = (
@@ -53,6 +67,10 @@ AEB_STEPS = (
     (0, 1.0, "0"),
     (AEB_STOPS, 2 ** AEB_STOPS, f"plus{AEB_STOP_LABEL}"),
 )
+
+SATURATION_FACTOR = get_saturation_factor()
+SATURATION_MIN = 1 / SATURATION_FACTOR
+SATURATION_MAX = SATURATION_FACTOR
 
 
 class StreamingOutput(io.BufferedIOBase):
@@ -91,6 +109,7 @@ manual_exposure_time_us: int | None = None
 frame_rate = 15
 white_balance_auto = True
 white_balance_gains: tuple[float, float] | None = None
+saturation_value = 1.0
 
 ALLOWED_FRAME_RATES = {1, 5, 15}
 ALLOWED_EXPOSURE_VALUES = {-1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0}
@@ -111,6 +130,10 @@ class ExposureValueSettings(BaseModel):
 
 class FrameRateSettings(BaseModel):
     fps: int
+
+
+class SaturationSettings(BaseModel):
+    value: float
 
 
 class PhotoSettings(BaseModel):
@@ -329,7 +352,10 @@ async def lifespan(app: FastAPI):
                 "output_size": LIVE_SENSOR_SIZE,
                 "bit_depth": 12,
             },
-            controls={"FrameRate": 15},
+            controls={
+                "FrameRate": 15,
+                "Saturation": saturation_value,
+            },
         )
         picam2.configure(config)
 
@@ -337,6 +363,7 @@ async def lifespan(app: FastAPI):
             "AeEnable": True,
             "ExposureValue": exposure_value,
             "AwbEnable": True,
+            "Saturation": saturation_value,
         })
         picam2.start()
         start_stream_encoder()
@@ -475,6 +502,7 @@ def build_photo_metadata(
                 if active_colour_gains is not None
                 else None
             ),
+            "saturation": saturation_value,
             "aeb": aeb,
             "aeb_ev": aeb_ev,
             "aeb_base_exposure_us": base_exposure_us,
@@ -494,6 +522,7 @@ def restore_live_view(preview_config: dict, current_exposure):
             frame_duration_us,
             frame_duration_us,
         ),
+        "Saturation": saturation_value,
     }
 
     if exposure_auto:
@@ -580,10 +609,12 @@ def take_photo(settings: PhotoSettings):
                     "AeEnable": False,
                     "ExposureTime": int(current_exposure),
                     "AnalogueGain": float(current_gain),
+                    "Saturation": saturation_value,
                 }
             else:
                 still_controls = {
                     "AeEnable": exposure_auto,
+                    "Saturation": saturation_value,
                 }
 
                 if exposure_auto:
@@ -822,6 +853,49 @@ def set_framerate(settings: FrameRateSettings):
     }
 
 
+@app.get("/api/saturation")
+def get_saturation():
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    return {
+        "value": saturation_value,
+        "min": SATURATION_MIN,
+        "max": SATURATION_MAX,
+        "factor": SATURATION_FACTOR,
+    }
+
+
+@app.put("/api/saturation")
+def set_saturation(settings: SaturationSettings):
+    global saturation_value
+
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    if not SATURATION_MIN <= settings.value <= SATURATION_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Saturation must be between {SATURATION_MIN:g} "
+                f"and {SATURATION_MAX:g}"
+            ),
+        )
+
+    with camera_lock:
+        picam2.set_controls({
+            "Saturation": float(settings.value),
+        })
+        saturation_value = float(settings.value)
+
+    return {
+        "value": saturation_value,
+        "min": SATURATION_MIN,
+        "max": SATURATION_MAX,
+        "factor": SATURATION_FACTOR,
+    }
+
+
 @app.get("/api/exposure")
 def get_exposure():
     if picam2 is None:
@@ -1002,6 +1076,7 @@ def set_white_balance(settings: WhiteBalanceSettings):
                 "FrameRate": frame_rate,
                 "AwbEnable": True,
                 "AwbMode": 0,
+                "Saturation": saturation_value,
             },
         )
 
@@ -1010,6 +1085,7 @@ def set_white_balance(settings: WhiteBalanceSettings):
         picam2.set_controls({
             "AwbEnable": True,
             "AwbMode": 0,
+            "Saturation": saturation_value,
         })
 
         picam2.start()
