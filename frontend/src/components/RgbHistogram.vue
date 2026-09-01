@@ -25,6 +25,7 @@ let sampleContext = null
 let histogramTimer = null
 let histogramAbortController = null
 let stopped = false
+let useLivePreviewFallback = false
 
 function drawChannel(context, bins, maximum, fillStyle, strokeStyle) {
   context.beginPath()
@@ -212,10 +213,19 @@ async function updateHistogram() {
     return
   }
 
+  if (useLivePreviewFallback) {
+    drawFromLivePreview()
+    histogramTimer = setTimeout(updateHistogram, props.intervalMs)
+    return
+  }
+
   let streamTimeout = null
+  let streamTimedOut = false
 
   try {
     streamTimeout = setTimeout(() => {
+      streamTimedOut = true
+
       if (histogramAbortController) {
         histogramAbortController.abort()
       }
@@ -242,8 +252,14 @@ async function updateHistogram() {
     }
   } catch (_) {
     if (!stopped) {
-      // Safari/iPadOS buffert soms een oneindige fetch-stream en levert dan
-      // geen leesbare chunks. Gebruik daar het reeds weergegeven MJPEG-beeld.
+      // Safari/iPadOS kan een oneindige fetch-stream bufferen zonder chunks
+      // vrij te geven. Na zo'n timeout blijven we daarom bij het reeds
+      // weergegeven MJPEG-beeld en openen we niet iedere 500 ms een nieuwe
+      // streamverbinding.
+      if (streamTimedOut) {
+        useLivePreviewFallback = true
+      }
+
       drawFromLivePreview()
     }
   } finally {
@@ -265,6 +281,7 @@ onMounted(() => {
   sampleCanvas.height = SAMPLE_HEIGHT
   sampleContext = sampleCanvas.getContext('2d', { willReadFrequently: true })
   stopped = false
+  useLivePreviewFallback = false
   updateHistogram()
 })
 
