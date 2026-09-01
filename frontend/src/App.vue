@@ -11,7 +11,6 @@ const exposure = ref(null)
 const framerate = ref(null)
 const whiteBalance = ref(null)
 const saturation = ref(null)
-const saturationPosition = ref(0)
 const cameraControlBusy = ref(false)
 const whiteBalanceBusy = ref(false)
 const whiteBalanceError = ref(null)
@@ -45,7 +44,6 @@ const exposureValues = [
 let exposureTimer = null
 let whiteBalanceTimer = null
 let photoStatusTimer = null
-let saturationTimer = null
 let cameraControlVersion = 0
 let saturationControlVersion = 0
 
@@ -83,22 +81,6 @@ function formatSaturation(value) {
   }
 
   return Number(value).toFixed(2)
-}
-
-function saturationValueFromPosition(position) {
-  if (!saturation.value?.factor) {
-    return 1
-  }
-
-  return saturation.value.factor ** (Number(position) / 100)
-}
-
-function saturationPositionFromValue(value, factor) {
-  if (!factor || factor === 1 || value == null) {
-    return 0
-  }
-
-  return Math.round((Math.log(value) / Math.log(factor)) * 100)
 }
 
 function formatFileSize(sizeBytes) {
@@ -378,12 +360,10 @@ async function loadSaturation() {
     throw new Error(`HTTP ${response.status}`)
   }
 
-  const result = await response.json()
-  saturation.value = result
-  saturationPosition.value = saturationPositionFromValue(result.value, result.factor)
+  saturation.value = await response.json()
 }
 
-async function setSaturation(position) {
+async function setSaturation(value) {
   if (!saturation.value) {
     return
   }
@@ -392,7 +372,7 @@ async function setSaturation(position) {
   const requestVersion = saturationControlVersion
   saturationBusy.value = true
   saturationError.value = null
-  const value = saturationValueFromPosition(position)
+  const nextValue = Number(Number(value).toFixed(2))
 
   try {
     const response = await fetch('/api/saturation', {
@@ -400,7 +380,7 @@ async function setSaturation(position) {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ value }),
+      body: JSON.stringify({ value: nextValue }),
     })
 
     if (!response.ok) {
@@ -411,7 +391,6 @@ async function setSaturation(position) {
 
     if (requestVersion === saturationControlVersion) {
       saturation.value = result
-      saturationPosition.value = saturationPositionFromValue(result.value, result.factor)
     }
   } catch (exc) {
     if (requestVersion === saturationControlVersion) {
@@ -422,19 +401,6 @@ async function setSaturation(position) {
       saturationBusy.value = false
     }
   }
-}
-
-function queueSaturation(event) {
-  saturationPosition.value = Number(event.target.value)
-
-  if (saturationTimer) {
-    clearTimeout(saturationTimer)
-  }
-
-  saturationTimer = setTimeout(() => {
-    saturationTimer = null
-    setSaturation(saturationPosition.value)
-  }, 120)
 }
 
 async function loadFiles() {
@@ -646,11 +612,6 @@ onUnmounted(() => {
   window.removeEventListener('hashchange', handlePageChange)
   stopCameraPolling()
   stopPhotoStatusPolling()
-
-  if (saturationTimer) {
-    clearTimeout(saturationTimer)
-    saturationTimer = null
-  }
 })
 </script>
 
@@ -795,18 +756,17 @@ onUnmounted(() => {
 
       <section v-if="saturation" id="saturation-panel" class="ui-panel">
         <h2>Verzadiging</h2>
-        <input
-          :value="saturationPosition"
+        <NumberStepper
+          :model-value="saturation.value"
+          :step="0.01"
+          :min="saturation.min"
+          :max="saturation.max"
+          suffix="×"
           :disabled="photoBusy || saturationBusy || shuttingDown"
-          type="range"
-          min="-100"
-          max="100"
-          step="1"
-          @change="queueSaturation"
-        >
+          @commit="setSaturation"
+        />
         <p class="compact-info">
-          {{ formatSaturation(saturationValueFromPosition(saturationPosition)) }}×
-          · {{ formatSaturation(saturation.min) }}×–{{ formatSaturation(saturation.max) }}×
+          Bereik: {{ formatSaturation(saturation.min) }}×–{{ formatSaturation(saturation.max) }}×
           <span v-if="saturationBusy"> · instellen...</span>
         </p>
         <p v-if="saturationError" class="error-message compact-info">
