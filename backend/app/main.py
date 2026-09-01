@@ -1283,10 +1283,13 @@ def set_white_balance_gains(settings: WhiteBalanceGainsSettings):
     gains = (red_gain, blue_gain)
 
     with camera_lock:
-        picam2.set_controls({
-            "AwbEnable": False,
-            "ColourGains": gains,
-        })
+        current_exposure = get_latest_metadata().get("ExposureTime")
+
+        white_balance_auto = False
+        white_balance_gains = gains
+
+        picam2.stop_encoder()
+        restore_live_view(current_exposure)
 
         try:
             metadata = wait_for_white_balance_gains(gains)
@@ -1300,7 +1303,6 @@ def set_white_balance_gains(settings: WhiteBalanceGainsSettings):
             else gains
         )
 
-        white_balance_auto = False
         white_balance_gains = applied_gains
 
     return {
