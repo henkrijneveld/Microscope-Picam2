@@ -1,0 +1,20 @@
+Ontwikkeling
+1. De ontwikkeling van de UI eerst in een eigen branch op git
+
+Bladvulling (layout)
+1. Alles op een scherm zonder scrollbars
+2. De controls zo klein mogelijk, maar zonder word wrap of overdreven inkrimping
+3. Preview niet kleiner dan 320x240px
+4. Live preview schaalt tot maximale grootte zodat er geen scrollbars ontstaan. ALs die grootte kleiner dan 320x240px is, dan scrollbars gaan gebruiken.
+
+Technisch
+1. Er kunnen knoppen worden gemaakt waar een bepaalde layout via een specifieke css wordt gekozen.
+2. De structuur zit in een css grid
+3. Alle grid componenten hebben een semantische ID
+4. Alle grid componenten zijn in een andere layout-css vrij verplaatsbaar
+
+UI Componenten (tweede stap na de layout)
+1. Er is een standaard selectie component met -10, -1, wijzigbare actuele waarde, +1, +10. Dit is de default methode om waardes in te geven tenzij expliciet anders vermeldt.
+2. Er is een histogramcomponent, nodig voor o.a. instelling witbalans
+3. Er is een aangepast witbalans component.
+
