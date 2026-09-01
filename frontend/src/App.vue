@@ -1,11 +1,13 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 import NumberStepper from './components/NumberStepper.vue'
+import RgbHistogram from './components/RgbHistogram.vue'
 
 const currentPage = ref(window.location.hash === '#files' ? 'files' : 'camera')
 
 const status = ref(null)
 const error = ref(null)
+const previewImage = ref(null)
 
 const exposure = ref(null)
 const framerate = ref(null)
@@ -666,6 +668,7 @@ onUnmounted(() => {
 
     <section id="preview-panel" aria-label="Live preview">
       <img
+        ref="previewImage"
         :src="'/api/stream'"
         alt="Live camerabeeld"
       >
@@ -752,6 +755,10 @@ onUnmounted(() => {
         <p v-if="whiteBalanceError" class="error-message compact-info">
           Fout: {{ whiteBalanceError }}
         </p>
+        <RgbHistogram
+          :source-element="previewImage"
+          :interval-ms="500"
+        />
       </section>
 
       <section v-if="saturation" id="saturation-panel" class="ui-panel">
