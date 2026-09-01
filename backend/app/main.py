@@ -148,6 +148,11 @@ class WhiteBalanceSettings(BaseModel):
     auto: bool
 
 
+class WhiteBalanceGainsSettings(BaseModel):
+    red_gain: float
+    blue_gain: float
+
+
 class ShutdownSettings(BaseModel):
     confirm: str
 
@@ -505,7 +510,7 @@ def build_photo_metadata(
             "frame_rate_fps": frame_rate,
             "exposure_auto": exposure_auto,
             "exposure_value_ev": exposure_value if exposure_auto else None,
-            "white_balance_mode": "auto" if white_balance_auto else "single_shot",
+            "white_balance_mode": "auto" if white_balance_auto else "manual",
             "white_balance_red_gain": (
                 active_colour_gains[0]
                 if active_colour_gains is not None
@@ -553,9 +558,6 @@ def restore_live_view(current_exposure):
         restore_controls["AwbEnable"] = False
         restore_controls["ColourGains"] = white_balance_gains
 
-    # Recreate the live configuration after a still-mode switch. On this
-    # pipeline Saturation must be part of the new configuration to keep
-    # affecting the ISP reliably after a photo capture.
     preview_config = picam2.create_video_configuration(
         main={"size": LIVE_SIZE},
         sensor={
@@ -641,7 +643,6 @@ def take_photo(settings: PhotoSettings):
                 else:
                     still_controls["ExposureTime"] = current_exposure
 
-            # Freeze the current live-view white balance for the still image(s).
             if white_balance_auto and current_colour_gains is not None:
                 still_controls["AwbEnable"] = False
                 still_controls["ColourGains"] = tuple(current_colour_gains)
@@ -1062,11 +1063,15 @@ def get_white_balance():
         raise HTTPException(status_code=503, detail="Camera not available")
 
     metadata = get_latest_metadata()
-    colour_gains = metadata.get("ColourGains")
+    colour_gains = (
+        white_balance_gains
+        if not white_balance_auto and white_balance_gains is not None
+        else metadata.get("ColourGains")
+    )
 
     return {
         "auto": white_balance_auto,
-        "mode": "auto" if white_balance_auto else "single_shot",
+        "mode": "auto" if white_balance_auto else "manual",
         "red_gain": colour_gains[0] if colour_gains is not None else None,
         "blue_gain": colour_gains[1] if colour_gains is not None else None,
         "colour_temperature": metadata.get("ColourTemperature"),
@@ -1082,7 +1087,7 @@ def set_white_balance(settings: WhiteBalanceSettings):
     if not settings.auto:
         raise HTTPException(
             status_code=400,
-            detail="Use single-shot white balance to set a fixed white balance",
+            detail="Use manual white balance to set fixed colour gains",
         )
     with camera_lock:
         picam2.stop_encoder()
@@ -1151,8 +1156,6 @@ def set_single_shot_white_balance():
         selected_gains = None
         selected_metadata = None
 
-        # Prefer AwbLocked when the platform reports it. The stability fallback
-        # also makes this usable on pipelines that do not expose AwbLocked.
         for _ in range(8):
             metadata = picam2.capture_metadata()
             colour_gains = metadata.get("ColourGains")
@@ -1199,7 +1202,7 @@ def set_single_shot_white_balance():
 
     return {
         "auto": False,
-        "mode": "single_shot",
+        "mode": "manual",
         "red_gain": selected_gains[0],
         "blue_gain": selected_gains[1],
         "colour_temperature": (
@@ -1207,6 +1210,43 @@ def set_single_shot_white_balance():
             if selected_metadata is not None
             else None
         ),
+    }
+
+
+@app.put("/api/whitebalance/gains")
+def set_white_balance_gains(settings: WhiteBalanceGainsSettings):
+    global white_balance_auto, white_balance_gains
+
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail="Camera not available")
+
+    red_gain = float(settings.red_gain)
+    blue_gain = float(settings.blue_gain)
+
+    if not 0.01 <= red_gain <= 32 or not 0.01 <= blue_gain <= 32:
+        raise HTTPException(
+            status_code=400,
+            detail="White balance gains must be between 0.01 and 32",
+        )
+
+    gains = (red_gain, blue_gain)
+
+    with camera_lock:
+        picam2.set_controls({
+            "AwbEnable": False,
+            "ColourGains": gains,
+        })
+        white_balance_auto = False
+        white_balance_gains = gains
+
+    metadata = get_latest_metadata()
+
+    return {
+        "auto": False,
+        "mode": "manual",
+        "red_gain": red_gain,
+        "blue_gain": blue_gain,
+        "colour_temperature": metadata.get("ColourTemperature"),
     }
 
 
