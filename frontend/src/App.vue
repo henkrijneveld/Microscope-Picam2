@@ -705,7 +705,7 @@ onUnmounted(() => {
 
     <aside id="controls-panel" aria-label="Camerainstellingen">
       <section v-if="framerate" id="frame-rate-panel" class="ui-panel">
-        <h2>Frame rate</h2>
+        <h2>Framesnelheid</h2>
         <div class="button-row">
           <button
             v-for="fps in framerate.options"
@@ -720,7 +720,7 @@ onUnmounted(() => {
       </section>
 
       <section v-if="exposure" id="exposure-panel" class="ui-panel">
-        <h2>Exposure</h2>
+        <h2>Belichting</h2>
         <div class="button-row">
           <button
             :disabled="cameraControlBusy || photoBusy || exposure.auto"
@@ -775,7 +775,7 @@ onUnmounted(() => {
         </div>
 
         <p class="compact-info">
-          {{ formatExposureTime(exposure.exposure_time_us) }} · A {{ formatDigitalGain(exposure.analogue_gain) }} · D {{ formatDigitalGain(exposure.digital_gain) }}
+          {{ formatExposureTime(exposure.exposure_time_us) }} · Analoog {{ formatDigitalGain(exposure.analogue_gain) }} · Digitaal {{ formatDigitalGain(exposure.digital_gain) }}
         </p>
       </section>
 
