@@ -30,7 +30,34 @@ const props = defineProps({
 
 const emit = defineEmits(['commit'])
 
-const draft = ref(String(props.modelValue))
+function stepDecimals() {
+  const step = Math.abs(Number(props.step))
+
+  if (!Number.isFinite(step) || step === 0) {
+    return 0
+  }
+
+  const text = String(step).toLowerCase()
+
+  if (text.includes('e-')) {
+    return Number(text.split('e-')[1]) || 0
+  }
+
+  const decimalPart = text.split('.')[1]
+  return decimalPart ? decimalPart.length : 0
+}
+
+function formatValue(value) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return String(value)
+  }
+
+  return number.toFixed(stepDecimals())
+}
+
+const draft = ref(formatValue(props.modelValue))
 const editing = ref(false)
 const suppressBlurCommit = ref(false)
 
@@ -38,7 +65,7 @@ watch(
   () => props.modelValue,
   (value) => {
     if (!editing.value) {
-      draft.value = String(value)
+      draft.value = formatValue(value)
     }
   },
 )
@@ -61,12 +88,12 @@ function commit(value) {
   const number = Number(value)
 
   if (!Number.isFinite(number)) {
-    draft.value = String(props.modelValue)
+    draft.value = formatValue(props.modelValue)
     return
   }
 
   const nextValue = clamp(number)
-  draft.value = String(nextValue)
+  draft.value = formatValue(nextValue)
   emit('commit', nextValue)
 }
 
@@ -98,7 +125,7 @@ function handleKeydown(event) {
   }
 
   if (event.key === 'Escape') {
-    draft.value = String(props.modelValue)
+    draft.value = formatValue(props.modelValue)
     event.currentTarget.blur()
   }
 }
