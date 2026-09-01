@@ -119,7 +119,6 @@ async function fetchCurrentJpeg() {
         return bytes.slice(start, end)
       }
 
-      // Een previewframe hoort ruim onder deze grens te blijven.
       if (bytes.length > 2 * 1024 * 1024) {
         throw new Error('Previewframe te groot')
       }
@@ -168,6 +167,20 @@ function drawHistogramFromPixels(pixels) {
   drawChannel(context, red, maximum, 'rgba(235, 30, 30, 0.32)', 'rgba(205, 20, 20, 0.95)')
 }
 
+function loadJpegImage(blob) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    const objectUrl = URL.createObjectURL(blob)
+
+    image.onload = () => resolve({ image, objectUrl })
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('JPEG-frame kon niet worden gedecodeerd'))
+    }
+    image.src = objectUrl
+  })
+}
+
 async function updateHistogram() {
   if (stopped || !sampleContext) {
     return
@@ -181,15 +194,15 @@ async function updateHistogram() {
     }
 
     const blob = new Blob([jpegBytes], { type: 'image/jpeg' })
-    const bitmap = await createImageBitmap(blob)
+    const { image, objectUrl } = await loadJpegImage(blob)
 
     try {
       sampleContext.clearRect(0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
-      sampleContext.drawImage(bitmap, 0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
+      sampleContext.drawImage(image, 0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
       const pixels = sampleContext.getImageData(0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT).data
       drawHistogramFromPixels(pixels)
     } finally {
-      bitmap.close()
+      URL.revokeObjectURL(objectUrl)
     }
   } catch (error) {
     if (error?.name !== 'AbortError') {
