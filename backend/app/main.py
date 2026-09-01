@@ -1225,10 +1225,17 @@ def set_single_shot_white_balance():
                 detail="White balance gains unavailable",
             )
 
-        picam2.set_controls({
-            "AwbEnable": False,
-            "ColourGains": selected_gains,
-        })
+        current_exposure = (
+            selected_metadata.get("ExposureTime")
+            if selected_metadata is not None
+            else get_latest_metadata().get("ExposureTime")
+        )
+
+        white_balance_auto = False
+        white_balance_gains = selected_gains
+
+        picam2.stop_encoder()
+        restore_live_view(current_exposure)
 
         try:
             selected_metadata = wait_for_white_balance_gains(selected_gains)
@@ -1242,7 +1249,6 @@ def set_single_shot_white_balance():
             else selected_gains
         )
 
-        white_balance_auto = False
         white_balance_gains = applied_gains
 
     return {
