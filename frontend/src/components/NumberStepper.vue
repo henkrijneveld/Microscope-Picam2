@@ -32,6 +32,7 @@ const emit = defineEmits(['commit'])
 
 const draft = ref(String(props.modelValue))
 const editing = ref(false)
+const suppressBlurCommit = ref(false)
 
 watch(
   () => props.modelValue,
@@ -69,7 +70,12 @@ function commit(value) {
   emit('commit', nextValue)
 }
 
+function prepareButtonAction() {
+  suppressBlurCommit.value = true
+}
+
 function stepBy(multiplier) {
+  suppressBlurCommit.value = false
   const current = Number(draft.value)
   const base = Number.isFinite(current) ? current : props.modelValue
   commit(base + multiplier * props.step)
@@ -77,6 +83,12 @@ function stepBy(multiplier) {
 
 function commitDraft() {
   editing.value = false
+
+  if (suppressBlurCommit.value) {
+    suppressBlurCommit.value = false
+    return
+  }
+
   commit(draft.value)
 }
 
@@ -94,10 +106,20 @@ function handleKeydown(event) {
 
 <template>
   <div class="number-stepper">
-    <button :disabled="disabled" type="button" @click="stepBy(-10)">
+    <button
+      :disabled="disabled"
+      type="button"
+      @mousedown="prepareButtonAction"
+      @click="stepBy(-10)"
+    >
       -10
     </button>
-    <button :disabled="disabled" type="button" @click="stepBy(-1)">
+    <button
+      :disabled="disabled"
+      type="button"
+      @mousedown="prepareButtonAction"
+      @click="stepBy(-1)"
+    >
       -1
     </button>
     <input
@@ -111,10 +133,20 @@ function handleKeydown(event) {
       @keydown="handleKeydown"
     >
     <span v-if="suffix" class="number-stepper-suffix">{{ suffix }}</span>
-    <button :disabled="disabled" type="button" @click="stepBy(1)">
+    <button
+      :disabled="disabled"
+      type="button"
+      @mousedown="prepareButtonAction"
+      @click="stepBy(1)"
+    >
       +1
     </button>
-    <button :disabled="disabled" type="button" @click="stepBy(10)">
+    <button
+      :disabled="disabled"
+      type="button"
+      @mousedown="prepareButtonAction"
+      @click="stepBy(10)"
+    >
       +10
     </button>
   </div>
@@ -127,6 +159,7 @@ function handleKeydown(event) {
   align-items: center;
   gap: 4px;
   min-width: 0;
+  margin-block: 4px;
 }
 
 .number-stepper button {
