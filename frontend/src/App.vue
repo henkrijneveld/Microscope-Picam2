@@ -780,7 +780,7 @@ onUnmounted(() => {
       </section>
 
       <section v-if="whiteBalance" id="white-balance-panel" class="ui-panel">
-        <h2>White balance</h2>
+        <h2>Witbalans</h2>
         <div class="button-row">
           <button
             :disabled="whiteBalanceBusy || photoBusy || whiteBalance.auto"
@@ -796,7 +796,7 @@ onUnmounted(() => {
           </button>
         </div>
         <p class="compact-info">
-          {{ whiteBalance.auto ? 'Auto' : 'Single' }} · R {{ formatColourGain(whiteBalance.red_gain) }} · B {{ formatColourGain(whiteBalance.blue_gain) }} ·
+          {{ whiteBalance.auto ? 'Auto' : 'Single' }} · Rood {{ formatColourGain(whiteBalance.red_gain) }} · Blauw {{ formatColourGain(whiteBalance.blue_gain) }} ·
           {{ whiteBalance.colour_temperature == null ? '—' : `${whiteBalance.colour_temperature} K` }}
         </p>
         <p v-if="whiteBalanceError" class="error-message compact-info">
