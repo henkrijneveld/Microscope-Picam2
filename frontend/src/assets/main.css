@@ -86,6 +86,21 @@ section.ui-panel p {
   padding-inline: 2px;
 }
 
+.white-balance-adjustments {
+  display: grid;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.white-balance-adjustment {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 0.86rem;
+}
+
 .compact-info {
   font-size: 0.86rem;
 }
