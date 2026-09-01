@@ -679,7 +679,7 @@ onUnmounted(() => {
           <span class="status-detail">{{ error }}</span>
         </template>
         <template v-else-if="status">
-          <span class="status-primary">Raspicam: {{ status.status }}</span>
+          <span class="status-primary">MicroRasp: {{ status.status }}</span>
           <span class="status-detail">
             {{ status.camera.connected ? 'verbonden' : 'niet verbonden' }}
             <template v-if="status.camera.connected">
@@ -690,7 +690,7 @@ onUnmounted(() => {
           </span>
         </template>
         <template v-else>
-          <span class="status-primary">Raspicam</span>
+          <span class="status-primary">MicroRasp</span>
           <span class="status-detail">status ophalen...</span>
         </template>
       </section>
@@ -861,8 +861,13 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <div id="capture-feedback" aria-live="polite">
+      <div
+        id="capture-feedback"
+        aria-live="polite"
+        :style="{ gridTemplateColumns: photoBusy && aebEnabled ? '52px minmax(0, 1fr)' : 'minmax(0, 1fr)' }"
+      >
         <div
+          v-show="photoBusy && aebEnabled"
           class="capture-progress"
           :class="{ visible: photoBusy && aebEnabled }"
           aria-hidden="true"
@@ -902,13 +907,13 @@ onUnmounted(() => {
           id="capture-status-text"
           :title="lastSavedFiles.join(' · ')"
         >
-          Opgeslagen: {{ lastSavedFiles.join(' · ') }}
+          <strong>Opgeslagen:</strong> {{ lastSavedFiles.join(' · ') }}
         </span>
         <span
           v-else
           id="capture-status-text"
         >
-          Gereed
+          <strong>Gereed</strong>
         </span>
       </div>
     </section>
