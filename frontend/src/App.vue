@@ -526,7 +526,7 @@ async function setExposureAuto(auto) {
     auto,
   }
 
-  // Bij overgang naar manual houden we expliciet
+  // Bij overgang naar handmatig houden we expliciet
   // de huidige exposuretijd vast.
   if (!auto && exposure.value?.exposure_time_us) {
     body.exposure_time_us = exposure.value.exposure_time_us
@@ -732,7 +732,7 @@ onUnmounted(() => {
             :disabled="cameraControlBusy || photoBusy || !exposure.auto"
             @click="setExposureAuto(false)"
           >
-            Manual
+            Handmatig
           </button>
         </div>
 
