@@ -440,7 +440,7 @@ async function setWhiteBalanceAuto() {
     })
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+      throw new Error(await getResponseError(response))
     }
 
     const result = await response.json()
@@ -455,7 +455,7 @@ async function setWhiteBalanceAuto() {
   }
 }
 
-async function setWhiteBalanceSingle() {
+async function setWhiteBalanceManual() {
   whiteBalanceBusy.value = true
   whiteBalanceError.value = null
 
@@ -465,7 +465,7 @@ async function setWhiteBalanceSingle() {
     })
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+      throw new Error(await getResponseError(response))
     }
 
     whiteBalance.value = await response.json()
@@ -474,6 +474,46 @@ async function setWhiteBalanceSingle() {
   } finally {
     whiteBalanceBusy.value = false
   }
+}
+
+async function setWhiteBalanceGains(redGain, blueGain) {
+  if (redGain == null || blueGain == null) {
+    return
+  }
+
+  whiteBalanceBusy.value = true
+  whiteBalanceError.value = null
+
+  try {
+    const response = await fetch('/api/whitebalance/gains', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        red_gain: Number(Number(redGain).toFixed(2)),
+        blue_gain: Number(Number(blueGain).toFixed(2)),
+      }),
+    })
+
+    if (!response.ok) {
+      throw new Error(await getResponseError(response))
+    }
+
+    whiteBalance.value = await response.json()
+  } catch (exc) {
+    whiteBalanceError.value = exc.message
+  } finally {
+    whiteBalanceBusy.value = false
+  }
+}
+
+function setWhiteBalanceRedGain(value) {
+  setWhiteBalanceGains(value, whiteBalance.value?.blue_gain)
+}
+
+function setWhiteBalanceBlueGain(value) {
+  setWhiteBalanceGains(whiteBalance.value?.red_gain, value)
 }
 
 async function setFramerate(fps) {
@@ -501,8 +541,6 @@ async function setExposureAuto(auto) {
     auto,
   }
 
-  // Bij overgang naar handmatig houden we expliciet
-  // de huidige exposuretijd vast.
   if (!auto && exposure.value?.exposure_time_us) {
     body.exposure_time_us = exposure.value.exposure_time_us
   }
@@ -743,13 +781,13 @@ onUnmounted(() => {
           </button>
           <button
             :disabled="whiteBalanceBusy || photoBusy"
-            @click="setWhiteBalanceSingle"
+            @click="setWhiteBalanceManual"
           >
-            {{ whiteBalanceBusy ? 'Meten...' : 'Single' }}
+            {{ whiteBalanceBusy ? 'Meten...' : 'Handmatig' }}
           </button>
         </div>
         <p class="compact-info">
-          {{ whiteBalance.auto ? 'Auto' : 'Single' }} · Rood {{ formatColourGain(whiteBalance.red_gain) }} · Blauw {{ formatColourGain(whiteBalance.blue_gain) }} ·
+          {{ whiteBalance.auto ? 'Auto' : 'Handmatig' }} · Rood {{ formatColourGain(whiteBalance.red_gain) }} · Blauw {{ formatColourGain(whiteBalance.blue_gain) }} ·
           {{ whiteBalance.colour_temperature == null ? '—' : `${whiteBalance.colour_temperature} K` }}
         </p>
         <p v-if="whiteBalanceError" class="error-message compact-info">
@@ -759,6 +797,30 @@ onUnmounted(() => {
           :source-element="previewImage"
           :interval-ms="500"
         />
+        <div class="white-balance-adjustments">
+          <div class="white-balance-adjustment">
+            <span>Rood</span>
+            <NumberStepper
+              :model-value="whiteBalance.red_gain ?? 1"
+              :step="0.01"
+              :min="0.01"
+              :max="32"
+              :disabled="whiteBalanceBusy || photoBusy || whiteBalance.auto"
+              @commit="setWhiteBalanceRedGain"
+            />
+          </div>
+          <div class="white-balance-adjustment">
+            <span>Blauw</span>
+            <NumberStepper
+              :model-value="whiteBalance.blue_gain ?? 1"
+              :step="0.01"
+              :min="0.01"
+              :max="32"
+              :disabled="whiteBalanceBusy || photoBusy || whiteBalance.auto"
+              @commit="setWhiteBalanceBlueGain"
+            />
+          </div>
+        </div>
       </section>
 
       <section v-if="saturation" id="saturation-panel" class="ui-panel">
