@@ -18,6 +18,7 @@ const SAMPLE_WIDTH = 160
 const SAMPLE_HEIGHT = 120
 const HISTOGRAM_WIDTH = 256
 const HISTOGRAM_HEIGHT = 96
+const STREAM_TIMEOUT_MS = 600
 
 let sampleCanvas = null
 let sampleContext = null
@@ -167,6 +168,31 @@ function drawHistogramFromPixels(pixels) {
   drawChannel(context, red, maximum, 'rgba(235, 30, 30, 0.32)', 'rgba(205, 20, 20, 0.95)')
 }
 
+function drawHistogramFromImage(image) {
+  if (
+    !sampleContext
+    || !image
+    || image.naturalWidth === 0
+    || image.naturalHeight === 0
+  ) {
+    return false
+  }
+
+  sampleContext.clearRect(0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
+  sampleContext.drawImage(image, 0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
+  const pixels = sampleContext.getImageData(0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT).data
+  drawHistogramFromPixels(pixels)
+  return true
+}
+
+function drawFromLivePreview() {
+  try {
+    return drawHistogramFromImage(props.sourceElement)
+  } catch (_) {
+    return false
+  }
+}
+
 function loadJpegImage(blob) {
   return new Promise((resolve, reject) => {
     const image = new Image()
@@ -186,8 +212,21 @@ async function updateHistogram() {
     return
   }
 
+  let streamTimeout = null
+
   try {
+    streamTimeout = setTimeout(() => {
+      if (histogramAbortController) {
+        histogramAbortController.abort()
+      }
+    }, STREAM_TIMEOUT_MS)
+
     const jpegBytes = await fetchCurrentJpeg()
+
+    if (streamTimeout) {
+      clearTimeout(streamTimeout)
+      streamTimeout = null
+    }
 
     if (!jpegBytes || stopped) {
       return
@@ -197,18 +236,21 @@ async function updateHistogram() {
     const { image, objectUrl } = await loadJpegImage(blob)
 
     try {
-      sampleContext.clearRect(0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
-      sampleContext.drawImage(image, 0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT)
-      const pixels = sampleContext.getImageData(0, 0, SAMPLE_WIDTH, SAMPLE_HEIGHT).data
-      drawHistogramFromPixels(pixels)
+      drawHistogramFromImage(image)
     } finally {
       URL.revokeObjectURL(objectUrl)
     }
-  } catch (error) {
-    if (error?.name !== 'AbortError') {
-      // Een tijdelijk onbeschikbaar frame proberen we bij de volgende update opnieuw.
+  } catch (_) {
+    if (!stopped) {
+      // Safari/iPadOS buffert soms een oneindige fetch-stream en levert dan
+      // geen leesbare chunks. Gebruik daar het reeds weergegeven MJPEG-beeld.
+      drawFromLivePreview()
     }
   } finally {
+    if (streamTimeout) {
+      clearTimeout(streamTimeout)
+    }
+
     histogramAbortController = null
 
     if (!stopped) {
