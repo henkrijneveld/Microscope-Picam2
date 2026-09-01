@@ -698,7 +698,7 @@ onUnmounted(() => {
 
     <section id="preview-panel" aria-label="Live preview">
       <img
-        src="/api/stream"
+        :src="'/api/stream'"
         alt="Live camerabeeld"
       >
     </section>
