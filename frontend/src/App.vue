@@ -648,95 +648,95 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main>
-    <h1>Microscope Picam2</h1>
-
-    <nav>
-      <button
-        :disabled="currentPage === 'camera'"
-        @click="showPage('camera')"
-      >
-        Camera
-      </button>
-
-      <button
-        :disabled="currentPage === 'files'"
-        @click="showPage('files')"
-      >
-        Bestanden
-      </button>
-
-      <button
-        :disabled="shutdownBusy || shuttingDown"
-        @click="shutdownPi"
-      >
-        {{ shutdownBusy ? 'Pi stoppen...' : 'Stop Pi' }}
-      </button>
-    </nav>
-
-    <p v-if="shuttingDown">
-      Pi wordt afgesloten. Wacht tot de Pi volledig uit is voordat de voeding wordt losgenomen.
-    </p>
-
-    <p v-if="shutdownError">
-      Fout bij afsluiten: {{ shutdownError }}
-    </p>
-
-    <template v-if="currentPage === 'camera'">
-      <p v-if="error">
-        Fout: {{ error }}
-      </p>
-
-      <div v-else-if="status">
-        <p>Status: {{ status.status }}</p>
-        <p>
-          Camera connected: {{ status.camera.connected }}
-          <template v-if="status.camera.connected">
-            ({{ status.camera.hostname || '—' }}, {{ status.camera.ip_address || '—' }})
-          </template>
-        </p>
-        <p>Model: {{ status.camera.model }}</p>
-      </div>
-
-      <p v-else>
-        Camerastatus ophalen...
-      </p>
-
-      <section v-if="framerate">
-        <h2>Frame rate</h2>
-
-        <button
-          v-for="fps in framerate.options"
-          :key="fps"
-          :disabled="cameraControlBusy || photoBusy || framerate.fps === fps"
-          @click="setFramerate(fps)"
-        >
-          {{ fps }} fps
+  <main v-if="currentPage === 'camera'" id="camera-layout">
+    <header id="topbar">
+      <nav id="navigation-panel" aria-label="Hoofdnavigatie">
+        <button disabled>
+          Camera
         </button>
+        <button @click="showPage('files')">
+          Bestanden
+        </button>
+        <button
+          :disabled="shutdownBusy || shuttingDown"
+          @click="shutdownPi"
+        >
+          {{ shutdownBusy ? 'Pi stoppen...' : 'Stop Pi' }}
+        </button>
+      </nav>
 
-        <p>
-          Huidig: {{ framerate.fps }} fps
-        </p>
+      <section id="system-status" aria-live="polite">
+        <template v-if="shuttingDown">
+          <span class="status-primary">Pi wordt afgesloten</span>
+          <span class="status-detail">Wacht tot de Pi volledig uit is voordat de voeding wordt losgenomen.</span>
+        </template>
+        <template v-else-if="shutdownError">
+          <span class="status-primary">Afsluitfout</span>
+          <span class="status-detail">{{ shutdownError }}</span>
+        </template>
+        <template v-else-if="error">
+          <span class="status-primary">Camerafout</span>
+          <span class="status-detail">{{ error }}</span>
+        </template>
+        <template v-else-if="status">
+          <span class="status-primary">Raspicam: {{ status.status }}</span>
+          <span class="status-detail">
+            {{ status.camera.connected ? 'verbonden' : 'niet verbonden' }}
+            <template v-if="status.camera.connected">
+              · {{ status.camera.model || 'model onbekend' }}
+              · {{ status.camera.hostname || '—' }}
+              · {{ status.camera.ip_address || '—' }}
+            </template>
+          </span>
+        </template>
+        <template v-else>
+          <span class="status-primary">Raspicam</span>
+          <span class="status-detail">status ophalen...</span>
+        </template>
+      </section>
+    </header>
+
+    <section id="preview-panel" aria-label="Live preview">
+      <img
+        src="/api/stream"
+        alt="Live camerabeeld"
+      >
+    </section>
+
+    <aside id="controls-panel" aria-label="Camerainstellingen">
+      <section v-if="framerate" id="frame-rate-panel" class="ui-panel">
+        <h2>Frame rate</h2>
+        <div class="button-row">
+          <button
+            v-for="fps in framerate.options"
+            :key="fps"
+            :disabled="cameraControlBusy || photoBusy || framerate.fps === fps"
+            @click="setFramerate(fps)"
+          >
+            {{ fps }} fps
+          </button>
+        </div>
+        <p class="compact-info">Huidig: {{ framerate.fps }} fps</p>
       </section>
 
-      <section v-if="exposure">
+      <section v-if="exposure" id="exposure-panel" class="ui-panel">
         <h2>Exposure</h2>
+        <div class="button-row">
+          <button
+            :disabled="cameraControlBusy || photoBusy || exposure.auto"
+            @click="setExposureAuto(true)"
+          >
+            Auto
+          </button>
+          <button
+            :disabled="cameraControlBusy || photoBusy || !exposure.auto"
+            @click="setExposureAuto(false)"
+          >
+            Manual
+          </button>
+        </div>
 
-        <button
-          :disabled="cameraControlBusy || photoBusy || exposure.auto"
-          @click="setExposureAuto(true)"
-        >
-          Auto
-        </button>
-
-        <button
-          :disabled="cameraControlBusy || photoBusy || !exposure.auto"
-          @click="setExposureAuto(false)"
-        >
-          Manual
-        </button>
-
-        <div>
+        <div class="button-row">
           <button
             v-for="item in exposureValues"
             :key="item.value"
@@ -747,28 +747,25 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div>
+        <div class="button-row">
           <button
             :disabled="cameraControlBusy || photoBusy || exposure.auto"
             @click="stepExposure(1 / 4)"
           >
             1/4
           </button>
-
           <button
             :disabled="cameraControlBusy || photoBusy || exposure.auto"
             @click="stepExposure(1 / 2)"
           >
             1/2
           </button>
-
           <button
             :disabled="cameraControlBusy || photoBusy || exposure.auto"
             @click="stepExposure(2)"
           >
             2×
           </button>
-
           <button
             :disabled="cameraControlBusy || photoBusy || exposure.auto"
             @click="stepExposure(4)"
@@ -777,46 +774,38 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <p>
-          Exposure: {{ formatExposureTime(exposure.exposure_time_us) }}<br>
-          Analogue gain: {{ formatDigitalGain(exposure.analogue_gain) }}<br>
-          Digital gain: {{ formatDigitalGain(exposure.digital_gain) }}
+        <p class="compact-info">
+          {{ formatExposureTime(exposure.exposure_time_us) }} · A {{ formatDigitalGain(exposure.analogue_gain) }} · D {{ formatDigitalGain(exposure.digital_gain) }}
         </p>
       </section>
 
-      <section v-if="whiteBalance">
+      <section v-if="whiteBalance" id="white-balance-panel" class="ui-panel">
         <h2>White balance</h2>
-
-        <button
-          :disabled="whiteBalanceBusy || photoBusy || whiteBalance.auto"
-          @click="setWhiteBalanceAuto"
-        >
-          Auto
-        </button>
-
-        <button
-          :disabled="whiteBalanceBusy || photoBusy"
-          @click="setWhiteBalanceSingle"
-        >
-          {{ whiteBalanceBusy ? 'Witbalans meten...' : 'Set white balance' }}
-        </button>
-
-        <p>
-          Mode: {{ whiteBalance.auto ? 'Auto' : 'Single shot' }}<br>
-          Red gain: {{ formatColourGain(whiteBalance.red_gain) }}<br>
-          Blue gain: {{ formatColourGain(whiteBalance.blue_gain) }}<br>
-          Colour temperature:
+        <div class="button-row">
+          <button
+            :disabled="whiteBalanceBusy || photoBusy || whiteBalance.auto"
+            @click="setWhiteBalanceAuto"
+          >
+            Auto
+          </button>
+          <button
+            :disabled="whiteBalanceBusy || photoBusy"
+            @click="setWhiteBalanceSingle"
+          >
+            {{ whiteBalanceBusy ? 'Meten...' : 'Single' }}
+          </button>
+        </div>
+        <p class="compact-info">
+          {{ whiteBalance.auto ? 'Auto' : 'Single' }} · R {{ formatColourGain(whiteBalance.red_gain) }} · B {{ formatColourGain(whiteBalance.blue_gain) }} ·
           {{ whiteBalance.colour_temperature == null ? '—' : `${whiteBalance.colour_temperature} K` }}
         </p>
-
-        <p v-if="whiteBalanceError">
-          Fout bij witbalans: {{ whiteBalanceError }}
+        <p v-if="whiteBalanceError" class="error-message compact-info">
+          Fout: {{ whiteBalanceError }}
         </p>
       </section>
 
-      <section v-if="saturation">
+      <section v-if="saturation" id="saturation-panel" class="ui-panel">
         <h2>Verzadiging</h2>
-
         <input
           :value="saturationPosition"
           :disabled="photoBusy || saturationBusy || shuttingDown"
@@ -826,145 +815,137 @@ onUnmounted(() => {
           step="1"
           @change="queueSaturation"
         >
-
-        <p>
+        <p class="compact-info">
           {{ formatSaturation(saturationValueFromPosition(saturationPosition)) }}×
-          <span v-if="saturationBusy"> instellen...</span>
+          · {{ formatSaturation(saturation.min) }}×–{{ formatSaturation(saturation.max) }}×
+          <span v-if="saturationBusy"> · instellen...</span>
         </p>
-
-        <p>
-          Bereik: {{ formatSaturation(saturation.min) }}× – {{ formatSaturation(saturation.max) }}×
-        </p>
-
-        <p v-if="saturationError">
-          Fout bij verzadiging: {{ saturationError }}
+        <p v-if="saturationError" class="error-message compact-info">
+          Fout: {{ saturationError }}
         </p>
       </section>
+    </aside>
 
-      <section>
-        <h2>Foto</h2>
+    <section id="capture-panel" class="ui-panel" aria-label="Foto opnemen">
+      <label class="photo-name">
+        <span>Foto naam</span>
+        <input
+          v-model="photoName"
+          :disabled="photoBusy"
+          type="text"
+        >
+      </label>
 
-        <label>
-          Naam:
-          <input
-            v-model="photoName"
-            :disabled="photoBusy"
-            type="text"
-          >
-        </label>
+      <div class="capture-mode">
+        <span>AEB</span>
+        <button
+          :disabled="photoBusy || !aebEnabled"
+          @click="aebEnabled = false"
+        >
+          Nee
+        </button>
+        <button
+          :disabled="photoBusy || aebEnabled"
+          @click="aebEnabled = true"
+        >
+          Ja
+        </button>
+      </div>
 
-        <div>
-          AEB:
-          <button
-            :disabled="photoBusy || !aebEnabled"
-            @click="aebEnabled = false"
-          >
-            Nee
-          </button>
-          <button
-            :disabled="photoBusy || aebEnabled"
-            @click="aebEnabled = true"
-          >
-            Ja
-          </button>
-        </div>
+      <div class="capture-action">
+        <button
+          :disabled="photoBusy || !photoName.trim()"
+          @click="takePhoto"
+        >
+          {{ photoBusy ? (aebEnabled ? 'AEB maken...' : 'Foto maken...') : 'Foto nemen' }}
+        </button>
+      </div>
 
-        <div>
-          <button
-            :disabled="photoBusy || !photoName.trim()"
-            @click="takePhoto"
-          >
-            {{ photoBusy ? (aebEnabled ? 'AEB maken...' : 'Foto maken...') : 'Foto nemen' }}
-          </button>
-        </div>
-
-        <div v-if="photoBusy && photoProgress?.aeb">
-          <p>
+      <div v-if="photoBusy || lastSavedFiles.length > 0 || photoError" id="capture-feedback">
+        <template v-if="photoBusy && photoProgress?.aeb">
+          <span>
             AEB opname
             <template v-if="photoProgress.step > 0">
-              {{ photoProgress.step }}/{{ photoProgress.total }}
-              {{ formatAebEv(photoProgress.ev) }}
+              {{ photoProgress.step }}/{{ photoProgress.total }} {{ formatAebEv(photoProgress.ev) }}
             </template>
-          </p>
+          </span>
           <progress
             :value="photoProgress.step"
             :max="photoProgress.total || 3"
           ></progress>
-        </div>
+        </template>
 
-        <div v-if="lastSavedFiles.length > 0">
-          <p>Opgeslagen op de Pi:</p>
-          <ul>
-            <li
-              v-for="filename in lastSavedFiles"
-              :key="filename"
-            >
-              {{ filename }}
-            </li>
-          </ul>
-        </div>
+        <ul v-if="lastSavedFiles.length > 0" class="compact-info">
+          <li
+            v-for="filename in lastSavedFiles"
+            :key="filename"
+          >
+            {{ filename }}
+          </li>
+        </ul>
 
-        <p v-if="photoError">
+        <p v-if="photoError" class="error-message compact-info">
           Fout bij foto: {{ photoError }}
         </p>
-      </section>
+      </div>
+    </section>
+  </main>
 
-      <img
-        :src="'/api/stream'"
-        alt="Live camerabeeld"
+  <main v-else id="files-layout">
+    <nav aria-label="Hoofdnavigatie">
+      <button @click="showPage('camera')">
+        Camera
+      </button>
+      <button disabled>
+        Bestanden
+      </button>
+      <button
+        :disabled="shutdownBusy || shuttingDown"
+        @click="shutdownPi"
       >
-    </template>
+        {{ shutdownBusy ? 'Pi stoppen...' : 'Stop Pi' }}
+      </button>
+    </nav>
 
-    <template v-else>
-      <section>
-        <h2>Bestanden</h2>
+    <section class="ui-panel">
+      <h2>Bestanden</h2>
+      <button
+        :disabled="filesBusy"
+        @click="loadFiles"
+      >
+        {{ filesBusy ? 'Verversen...' : 'Verversen' }}
+      </button>
 
-        <button
-          :disabled="filesBusy"
-          @click="loadFiles"
-        >
-          {{ filesBusy ? 'Verversen...' : 'Verversen' }}
-        </button>
+      <p v-if="filesDirectory">Map op Pi: {{ filesDirectory }}</p>
+      <p v-if="filesError">Fout bij bestanden: {{ filesError }}</p>
+      <p v-else-if="!filesBusy && files.length === 0">Nog geen foto's opgeslagen.</p>
 
-        <p v-if="filesDirectory">
-          Map op Pi: {{ filesDirectory }}
-        </p>
-
-        <p v-if="filesError">
-          Fout bij bestanden: {{ filesError }}
-        </p>
-
-        <p v-else-if="!filesBusy && files.length === 0">
-          Nog geen foto's opgeslagen.
-        </p>
-
-        <table v-else-if="files.length > 0">
-          <thead>
-            <tr>
-              <th>Bestand</th>
-              <th>Grootte</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="file in files"
-              :key="file.name"
-            >
-              <td>{{ file.name }}</td>
-              <td>{{ formatFileSize(file.size_bytes) }}</td>
-              <td>
-                <a
-                  :href="fileDownloadUrl(file.name)"
-                  :download="file.name"
-                >
-                  Download
-                </a>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-    </template>
+      <table v-else-if="files.length > 0">
+        <thead>
+          <tr>
+            <th>Bestand</th>
+            <th>Grootte</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="file in files"
+            :key="file.name"
+          >
+            <td>{{ file.name }}</td>
+            <td>{{ formatFileSize(file.size_bytes) }}</td>
+            <td>
+              <a
+                :href="fileDownloadUrl(file.name)"
+                :download="file.name"
+              >
+                Download
+              </a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
   </main>
 </template>
