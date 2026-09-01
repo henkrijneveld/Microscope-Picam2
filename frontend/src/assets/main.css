@@ -72,6 +72,16 @@ section.ui-panel p {
   min-width: 0;
 }
 
+#exposure-panel .button-row:nth-of-type(2) {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+#exposure-panel .button-row:nth-of-type(2) button {
+  min-width: 0;
+  padding-inline: 2px;
+}
+
 .compact-info {
   font-size: 0.86rem;
 }
