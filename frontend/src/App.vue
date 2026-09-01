@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
+import NumberStepper from './components/NumberStepper.vue'
 
 const currentPage = ref(window.location.hash === '#files' ? 'files' : 'camera')
 
@@ -259,14 +260,19 @@ async function setExposureValue(value) {
   }
 }
 
-async function stepExposure(factor) {
+async function setManualExposureTime(valueMs) {
+  const exposureTimeUs = Math.max(1, Math.round(Number(valueMs) * 1000))
+
   const result = await runCameraControl(async () => {
-    const response = await fetch('/api/exposure/step', {
+    const response = await fetch('/api/exposure', {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ factor }),
+      body: JSON.stringify({
+        auto: false,
+        exposure_time_us: exposureTimeUs,
+      }),
     })
 
     if (!response.ok) {
@@ -279,6 +285,7 @@ async function stepExposure(factor) {
   exposure.value = {
     ...exposure.value,
     ...result,
+    auto: false,
   }
 }
 
@@ -747,32 +754,14 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div class="button-row">
-          <button
-            :disabled="cameraControlBusy || photoBusy || exposure.auto"
-            @click="stepExposure(1 / 4)"
-          >
-            1/4
-          </button>
-          <button
-            :disabled="cameraControlBusy || photoBusy || exposure.auto"
-            @click="stepExposure(1 / 2)"
-          >
-            1/2
-          </button>
-          <button
-            :disabled="cameraControlBusy || photoBusy || exposure.auto"
-            @click="stepExposure(2)"
-          >
-            2×
-          </button>
-          <button
-            :disabled="cameraControlBusy || photoBusy || exposure.auto"
-            @click="stepExposure(4)"
-          >
-            4×
-          </button>
-        </div>
+        <NumberStepper
+          :model-value="exposure.exposure_time_us == null ? 0 : exposure.exposure_time_us / 1000"
+          :step="1"
+          :min="0.001"
+          suffix="ms"
+          :disabled="cameraControlBusy || photoBusy || exposure.auto"
+          @commit="setManualExposureTime"
+        />
 
         <p class="compact-info">
           {{ formatExposureTime(exposure.exposure_time_us) }} · Analoog {{ formatDigitalGain(exposure.analogue_gain) }} · Digitaal {{ formatDigitalGain(exposure.digital_gain) }}
