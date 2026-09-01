@@ -24,6 +24,10 @@ let sampleCanvas = null
 let sampleContext = null
 let histogramTimer = null
 let histogramAbortController = null
+let histogramReader = null
+let histogramBytes = new Uint8Array(0)
+let latestJpegBytes = null
+let streamTimeout = null
 let stopped = false
 let useLivePreviewFallback = false
 
@@ -90,50 +94,80 @@ function appendBytes(current, next) {
   return combined
 }
 
-async function fetchCurrentJpeg() {
-  histogramAbortController = new AbortController()
+function consumeJpegFrames() {
+  while (true) {
+    const range = findJpegRange(histogramBytes)
 
-  const response = await fetch(`/api/stream?histogram=${Date.now()}`, {
-    cache: 'no-store',
-    signal: histogramAbortController.signal,
-  })
+    if (!range) {
+      break
+    }
 
-  if (!response.ok || !response.body) {
-    throw new Error(`HTTP ${response.status}`)
+    const [start, end] = range
+    latestJpegBytes = histogramBytes.slice(start, end)
+    histogramBytes = histogramBytes.slice(end)
+
+    if (streamTimeout) {
+      clearTimeout(streamTimeout)
+      streamTimeout = null
+    }
   }
 
-  const reader = response.body.getReader()
-  let bytes = new Uint8Array(0)
+  if (histogramBytes.length > 2 * 1024 * 1024) {
+    histogramBytes = new Uint8Array(0)
+  }
+}
 
+async function readHistogramStream() {
   try {
-    while (!stopped) {
-      const { done, value } = await reader.read()
+    histogramAbortController = new AbortController()
+
+    streamTimeout = setTimeout(() => {
+      useLivePreviewFallback = true
+      histogramAbortController?.abort()
+    }, STREAM_TIMEOUT_MS)
+
+    const response = await fetch(`/api/stream?histogram=${Date.now()}`, {
+      cache: 'no-store',
+      signal: histogramAbortController.signal,
+    })
+
+    if (!response.ok || !response.body) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    histogramReader = response.body.getReader()
+
+    while (!stopped && !useLivePreviewFallback) {
+      const { done, value } = await histogramReader.read()
 
       if (done) {
         break
       }
 
-      bytes = appendBytes(bytes, value)
-      const range = findJpegRange(bytes)
-
-      if (range) {
-        const [start, end] = range
-        return bytes.slice(start, end)
-      }
-
-      if (bytes.length > 2 * 1024 * 1024) {
-        throw new Error('Previewframe te groot')
-      }
+      histogramBytes = appendBytes(histogramBytes, value)
+      consumeJpegFrames()
+    }
+  } catch (_) {
+    if (!stopped) {
+      useLivePreviewFallback = true
     }
   } finally {
-    try {
-      await reader.cancel()
-    } catch (_) {
-      // De server kan de stream al gesloten hebben.
+    if (streamTimeout) {
+      clearTimeout(streamTimeout)
+      streamTimeout = null
     }
-  }
 
-  return null
+    if (histogramReader) {
+      try {
+        await histogramReader.cancel()
+      } catch (_) {
+        // De browser of server kan de stream al gesloten hebben.
+      }
+    }
+
+    histogramReader = null
+    histogramAbortController = null
+  }
 }
 
 function drawHistogramFromPixels(pixels) {
@@ -213,36 +247,17 @@ async function updateHistogram() {
     return
   }
 
-  if (useLivePreviewFallback) {
-    drawFromLivePreview()
-    histogramTimer = setTimeout(updateHistogram, props.intervalMs)
-    return
-  }
-
-  let streamTimeout = null
-  let streamTimedOut = false
-
   try {
-    streamTimeout = setTimeout(() => {
-      streamTimedOut = true
-
-      if (histogramAbortController) {
-        histogramAbortController.abort()
-      }
-    }, STREAM_TIMEOUT_MS)
-
-    const jpegBytes = await fetchCurrentJpeg()
-
-    if (streamTimeout) {
-      clearTimeout(streamTimeout)
-      streamTimeout = null
-    }
-
-    if (!jpegBytes || stopped) {
+    if (useLivePreviewFallback) {
+      drawFromLivePreview()
       return
     }
 
-    const blob = new Blob([jpegBytes], { type: 'image/jpeg' })
+    if (!latestJpegBytes) {
+      return
+    }
+
+    const blob = new Blob([latestJpegBytes], { type: 'image/jpeg' })
     const { image, objectUrl } = await loadJpegImage(blob)
 
     try {
@@ -252,23 +267,9 @@ async function updateHistogram() {
     }
   } catch (_) {
     if (!stopped) {
-      // Safari/iPadOS kan een oneindige fetch-stream bufferen zonder chunks
-      // vrij te geven. Na zo'n timeout blijven we daarom bij het reeds
-      // weergegeven MJPEG-beeld en openen we niet iedere 500 ms een nieuwe
-      // streamverbinding.
-      if (streamTimedOut) {
-        useLivePreviewFallback = true
-      }
-
       drawFromLivePreview()
     }
   } finally {
-    if (streamTimeout) {
-      clearTimeout(streamTimeout)
-    }
-
-    histogramAbortController = null
-
     if (!stopped) {
       histogramTimer = setTimeout(updateHistogram, props.intervalMs)
     }
@@ -280,8 +281,13 @@ onMounted(() => {
   sampleCanvas.width = SAMPLE_WIDTH
   sampleCanvas.height = SAMPLE_HEIGHT
   sampleContext = sampleCanvas.getContext('2d', { willReadFrequently: true })
+
   stopped = false
   useLivePreviewFallback = false
+  histogramBytes = new Uint8Array(0)
+  latestJpegBytes = null
+
+  readHistogramStream()
   updateHistogram()
 })
 
@@ -293,11 +299,19 @@ onUnmounted(() => {
     histogramTimer = null
   }
 
-  if (histogramAbortController) {
-    histogramAbortController.abort()
-    histogramAbortController = null
+  if (streamTimeout) {
+    clearTimeout(streamTimeout)
+    streamTimeout = null
   }
 
+  if (histogramAbortController) {
+    histogramAbortController.abort()
+  }
+
+  histogramReader = null
+  histogramAbortController = null
+  histogramBytes = new Uint8Array(0)
+  latestJpegBytes = null
   sampleCanvas = null
   sampleContext = null
 })
