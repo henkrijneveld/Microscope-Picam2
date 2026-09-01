@@ -30,6 +30,7 @@ FRONTEND_DIST = PROJECT_DIR / "frontend" / "dist"
 POWEROFF_HELPER = Path("/usr/local/sbin/microscope-picam2-poweroff")
 
 AEB_TIMEOUT_SECONDS = 5.0
+WHITE_BALANCE_TIMEOUT_SECONDS = 5.0
 
 
 def get_aeb_stops():
@@ -275,6 +276,38 @@ def wait_for_exposure(target_exposure_us: int):
     raise TimeoutError(
         f"Exposure did not stabilise at {target_exposure_us} us "
         f"within {AEB_TIMEOUT_SECONDS:.0f} seconds; last value was {last_exposure} us"
+    )
+
+
+def wait_for_white_balance_gains(target_gains: tuple[float, float]):
+    if picam2 is None:
+        raise RuntimeError("Camera not available")
+
+    target_red, target_blue = target_gains
+    red_tolerance = max(0.01, abs(target_red) * 0.01)
+    blue_tolerance = max(0.01, abs(target_blue) * 0.01)
+    deadline = monotonic() + WHITE_BALANCE_TIMEOUT_SECONDS
+    last_gains = None
+
+    while monotonic() < deadline:
+        metadata = picam2.capture_metadata()
+        colour_gains = metadata.get("ColourGains")
+
+        if colour_gains is None:
+            continue
+
+        last_gains = (float(colour_gains[0]), float(colour_gains[1]))
+
+        if (
+            abs(last_gains[0] - target_red) <= red_tolerance
+            and abs(last_gains[1] - target_blue) <= blue_tolerance
+        ):
+            return metadata
+
+    raise TimeoutError(
+        "White balance gains did not reach "
+        f"({target_red:.2f}, {target_blue:.2f}) within "
+        f"{WHITE_BALANCE_TIMEOUT_SECONDS:.0f} seconds; last value was {last_gains}"
     )
 
 
@@ -1197,14 +1230,26 @@ def set_single_shot_white_balance():
             "ColourGains": selected_gains,
         })
 
+        try:
+            selected_metadata = wait_for_white_balance_gains(selected_gains)
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
+
+        applied_colour_gains = selected_metadata.get("ColourGains")
+        applied_gains = (
+            (float(applied_colour_gains[0]), float(applied_colour_gains[1]))
+            if applied_colour_gains is not None
+            else selected_gains
+        )
+
         white_balance_auto = False
-        white_balance_gains = selected_gains
+        white_balance_gains = applied_gains
 
     return {
         "auto": False,
         "mode": "manual",
-        "red_gain": selected_gains[0],
-        "blue_gain": selected_gains[1],
+        "red_gain": applied_gains[0],
+        "blue_gain": applied_gains[1],
         "colour_temperature": (
             selected_metadata.get("ColourTemperature")
             if selected_metadata is not None
@@ -1236,16 +1281,27 @@ def set_white_balance_gains(settings: WhiteBalanceGainsSettings):
             "AwbEnable": False,
             "ColourGains": gains,
         })
-        white_balance_auto = False
-        white_balance_gains = gains
 
-    metadata = get_latest_metadata()
+        try:
+            metadata = wait_for_white_balance_gains(gains)
+        except TimeoutError as exc:
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
+
+        colour_gains = metadata.get("ColourGains")
+        applied_gains = (
+            (float(colour_gains[0]), float(colour_gains[1]))
+            if colour_gains is not None
+            else gains
+        )
+
+        white_balance_auto = False
+        white_balance_gains = applied_gains
 
     return {
         "auto": False,
         "mode": "manual",
-        "red_gain": red_gain,
-        "blue_gain": blue_gain,
+        "red_gain": applied_gains[0],
+        "blue_gain": applied_gains[1],
         "colour_temperature": metadata.get("ColourTemperature"),
     }
 
