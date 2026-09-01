@@ -861,32 +861,55 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <div v-if="photoBusy || lastSavedFiles.length > 0 || photoError" id="capture-feedback">
-        <template v-if="photoBusy && photoProgress?.aeb">
-          <span>
-            AEB opname
-            <template v-if="photoProgress.step > 0">
-              {{ photoProgress.step }}/{{ photoProgress.total }} {{ formatAebEv(photoProgress.ev) }}
-            </template>
-          </span>
-          <progress
-            :value="photoProgress.step"
-            :max="photoProgress.total || 3"
-          ></progress>
-        </template>
+      <div id="capture-feedback" aria-live="polite">
+        <div
+          class="capture-progress"
+          :class="{ visible: photoBusy && aebEnabled }"
+          aria-hidden="true"
+        >
+          <span
+            v-for="step in 3"
+            :key="step"
+            class="capture-progress-block"
+            :class="{ complete: photoProgress?.aeb && photoProgress.step >= step }"
+          ></span>
+        </div>
 
-        <ul v-if="lastSavedFiles.length > 0" class="compact-info">
-          <li
-            v-for="filename in lastSavedFiles"
-            :key="filename"
-          >
-            {{ filename }}
-          </li>
-        </ul>
-
-        <p v-if="photoError" class="error-message compact-info">
+        <span
+          v-if="photoError"
+          id="capture-status-text"
+          class="error-message"
+        >
           Fout bij foto: {{ photoError }}
-        </p>
+        </span>
+        <span
+          v-else-if="photoBusy && photoProgress?.aeb"
+          id="capture-status-text"
+        >
+          AEB opname
+          <template v-if="photoProgress.step > 0">
+            {{ photoProgress.step }}/{{ photoProgress.total }} · {{ formatAebEv(photoProgress.ev) }}
+          </template>
+        </span>
+        <span
+          v-else-if="photoBusy"
+          id="capture-status-text"
+        >
+          Foto wordt gemaakt…
+        </span>
+        <span
+          v-else-if="lastSavedFiles.length > 0"
+          id="capture-status-text"
+          :title="lastSavedFiles.join(' · ')"
+        >
+          Opgeslagen: {{ lastSavedFiles.join(' · ') }}
+        </span>
+        <span
+          v-else
+          id="capture-status-text"
+        >
+          Gereed
+        </span>
       </div>
     </section>
   </main>
