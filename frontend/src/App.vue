@@ -22,6 +22,8 @@ const saturationError = ref(null)
 const photoBusy = ref(false)
 const photoError = ref(null)
 const photoName = ref('microscope')
+const fovValue = ref('')
+const fovUnit = ref('mm')
 const captureMode = ref('single')
 const photoProgress = ref(null)
 const lastSavedFiles = ref([])
@@ -124,6 +126,17 @@ function updateRgbSample(sample) {
   rgbSample.value = sample
 }
 
+function parseFovValue() {
+  const text = String(fovValue.value).trim().replace(',', '.')
+
+  if (!text) {
+    return null
+  }
+
+  const value = Number(text)
+  return Number.isFinite(value) ? value : null
+}
+
 function startCameraPolling() {
   if (!exposureTimer) {
     exposureTimer = setInterval(loadExposure, 500)
@@ -195,8 +208,15 @@ async function runCameraControl(action) {
 }
 
 async function takePhoto() {
-  photoBusy.value = true
   photoError.value = null
+  const fov = parseFovValue()
+
+  if (String(fovValue.value).trim() && (fov == null || fov <= 0)) {
+    photoError.value = 'FOV moet een positief getal zijn'
+    return
+  }
+
+  photoBusy.value = true
   lastSavedFiles.value = []
   photoProgress.value = null
   startPhotoStatusPolling()
@@ -210,6 +230,8 @@ async function takePhoto() {
       body: JSON.stringify({
         name: photoName.value,
         mode: captureMode.value,
+        fov_value: fov,
+        fov_unit: fov == null ? null : fovUnit.value,
       }),
     })
 
@@ -929,6 +951,39 @@ onUnmounted(() => {
           @click="takePhoto"
         >
           {{ photoBusy ? (isHdrMode() ? `${captureModeLabel()} maken...` : 'Foto maken...') : 'Foto nemen' }}
+        </button>
+      </div>
+
+      <div class="fov-setting">
+        <span>FOV</span>
+        <input
+          v-model="fovValue"
+          :disabled="photoBusy"
+          type="text"
+          inputmode="decimal"
+          placeholder="getal"
+          aria-label="Field of view"
+        >
+        <button
+          :disabled="photoBusy || fovUnit === 'µm'"
+          type="button"
+          @click="fovUnit = 'µm'"
+        >
+          µm
+        </button>
+        <button
+          :disabled="photoBusy || fovUnit === 'mm'"
+          type="button"
+          @click="fovUnit = 'mm'"
+        >
+          mm
+        </button>
+        <button
+          :disabled="photoBusy || fovUnit === 'cm'"
+          type="button"
+          @click="fovUnit = 'cm'"
+        >
+          cm
         </button>
       </div>
 
