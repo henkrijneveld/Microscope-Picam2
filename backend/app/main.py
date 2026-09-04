@@ -62,12 +62,24 @@ def get_saturation_factor():
 
 
 AEB_STOPS = get_aeb_stops()
-AEB_STOP_LABEL = f"{AEB_STOPS:g}"
-AEB_STEPS = (
-    (-AEB_STOPS, 2 ** -AEB_STOPS, f"min{AEB_STOP_LABEL}"),
-    (0, 1.0, "0"),
-    (AEB_STOPS, 2 ** AEB_STOPS, f"plus{AEB_STOP_LABEL}"),
-)
+
+
+def make_aeb_step(multiplier: int):
+    ev = multiplier * AEB_STOPS
+
+    if multiplier == 0:
+        label = "0"
+    else:
+        direction = "min" if multiplier < 0 else "plus"
+        label = f"{direction}{abs(ev):g}"
+
+    return ev, 2 ** ev, label
+
+
+AEB_STEP_SETS = {
+    "hdr3": tuple(make_aeb_step(multiplier) for multiplier in (-1, 0, 1)),
+    "hdr5": tuple(make_aeb_step(multiplier) for multiplier in (-2, -1, 0, 1, 2)),
+}
 
 SATURATION_FACTOR = get_saturation_factor()
 SATURATION_MIN = 1 / SATURATION_FACTOR
@@ -101,6 +113,7 @@ latest_metadata: dict = {}
 capture_status: dict = {
     "active": False,
     "aeb": False,
+    "mode": "single",
     "step": 0,
     "total": 0,
     "ev": None,
@@ -142,7 +155,8 @@ class SaturationSettings(BaseModel):
 
 class PhotoSettings(BaseModel):
     name: str
-    aeb: bool = False
+    mode: str | None = None
+    aeb: bool | None = None
 
 
 class WhiteBalanceSettings(BaseModel):
@@ -525,6 +539,7 @@ def build_photo_metadata(
     still_config: dict,
     captured_metadata: dict,
     *,
+    capture_mode: str,
     aeb: bool,
     aeb_ev: float | None = None,
     base_exposure_us: int | None = None,
@@ -555,7 +570,9 @@ def build_photo_metadata(
                 else None
             ),
             "saturation": saturation_value,
+            "capture_mode": capture_mode,
             "aeb": aeb,
+            "aeb_stops": AEB_STOPS if aeb else None,
             "aeb_ev": aeb_ev,
             "aeb_base_exposure_us": base_exposure_us,
         },
@@ -620,11 +637,28 @@ def take_photo(settings: PhotoSettings):
             detail="Photo name is required",
         )
 
+    capture_mode = settings.mode
+
+    if capture_mode is None:
+        capture_mode = "hdr3" if settings.aeb else "single"
+
+    capture_mode = capture_mode.strip().lower()
+
+    if capture_mode not in {"single", "hdr3", "hdr5"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Capture mode must be single, hdr3 or hdr5",
+        )
+
+    aeb_steps = AEB_STEP_SETS.get(capture_mode, ())
+    aeb_enabled = bool(aeb_steps)
+
     set_capture_status(
         active=True,
-        aeb=settings.aeb,
+        aeb=aeb_enabled,
+        mode=capture_mode,
         step=0,
-        total=3 if settings.aeb else 1,
+        total=len(aeb_steps) if aeb_enabled else 1,
         ev=None,
         state="starting",
         error=None,
@@ -649,7 +683,7 @@ def take_photo(settings: PhotoSettings):
                     detail="Current exposure time unavailable",
                 )
 
-            if settings.aeb:
+            if aeb_enabled:
                 if current_gain is None:
                     raise HTTPException(
                         status_code=500,
@@ -692,12 +726,12 @@ def take_photo(settings: PhotoSettings):
             picam2.stop_encoder()
 
             try:
-                if settings.aeb:
+                if aeb_enabled:
                     picam2.switch_mode(still_config)
                     exposure_min, exposure_max, _ = picam2.camera_controls["ExposureTime"]
                     files = []
 
-                    for index, (ev, factor, label) in enumerate(AEB_STEPS, start=1):
+                    for index, (ev, factor, label) in enumerate(aeb_steps, start=1):
                         target_exposure = round(int(current_exposure) * factor)
                         target_exposure = max(
                             exposure_min,
@@ -708,7 +742,7 @@ def take_photo(settings: PhotoSettings):
                             active=True,
                             aeb=True,
                             step=index,
-                            total=3,
+                            total=len(aeb_steps),
                             ev=ev,
                             state="stabilising",
                             error=None,
@@ -746,6 +780,7 @@ def take_photo(settings: PhotoSettings):
                             capture_time,
                             still_config,
                             captured_metadata,
+                            capture_mode=capture_mode,
                             aeb=True,
                             aeb_ev=ev,
                             base_exposure_us=int(current_exposure),
@@ -764,6 +799,7 @@ def take_photo(settings: PhotoSettings):
                         })
 
                     result = {
+                        "mode": capture_mode,
                         "aeb": True,
                         "filenames": [item["filename"] for item in files],
                         "files": files,
@@ -796,6 +832,7 @@ def take_photo(settings: PhotoSettings):
                         capture_time,
                         still_config,
                         captured_metadata,
+                        capture_mode=capture_mode,
                         aeb=False,
                     )
                     photo_data = embed_photo_metadata(
@@ -805,6 +842,7 @@ def take_photo(settings: PhotoSettings):
                     )
                     photo_path.write_bytes(photo_data)
                     result = {
+                        "mode": capture_mode,
                         "aeb": False,
                         "filename": filename,
                         "size_bytes": len(photo_data),
