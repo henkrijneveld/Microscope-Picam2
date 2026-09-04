@@ -12,6 +12,7 @@ const previewImage = ref(null)
 const exposure = ref(null)
 const framerate = ref(null)
 const whiteBalance = ref(null)
+const rgbSample = ref(null)
 const saturation = ref(null)
 const cameraControlBusy = ref(false)
 const whiteBalanceBusy = ref(false)
@@ -117,6 +118,10 @@ function fileDownloadUrl(filename) {
 
 function showPage(page) {
   window.location.hash = page === 'files' ? 'files' : ''
+}
+
+function updateRgbSample(sample) {
+  rgbSample.value = sample
 }
 
 function startCameraPolling() {
@@ -514,6 +519,34 @@ async function setWhiteBalanceGains(redGain, blueGain) {
   }
 }
 
+async function setWhiteBalanceFromSample() {
+  whiteBalanceError.value = null
+
+  const sample = rgbSample.value
+  const currentRed = Number(whiteBalance.value?.red_gain)
+  const currentBlue = Number(whiteBalance.value?.blue_gain)
+
+  if (
+    !sample
+    || !Number.isFinite(currentRed)
+    || !Number.isFinite(currentBlue)
+    || !Number.isFinite(sample.red)
+    || !Number.isFinite(sample.green)
+    || !Number.isFinite(sample.blue)
+    || sample.red <= 0
+    || sample.green <= 0
+    || sample.blue <= 0
+  ) {
+    whiteBalanceError.value = 'Geen bruikbare RGB-meting beschikbaar'
+    return
+  }
+
+  const nextRed = Math.max(0.01, Math.min(32, currentRed * sample.green / sample.red))
+  const nextBlue = Math.max(0.01, Math.min(32, currentBlue * sample.green / sample.blue))
+
+  await setWhiteBalanceGains(nextRed, nextBlue)
+}
+
 function setWhiteBalanceRedGain(value) {
   setWhiteBalanceGains(value, whiteBalance.value?.blue_gain)
 }
@@ -792,6 +825,12 @@ onUnmounted(() => {
           >
             {{ whiteBalanceBusy ? 'Meten...' : 'Handmatig' }}
           </button>
+          <button
+            :disabled="whiteBalanceBusy || photoBusy || !rgbSample"
+            @click="setWhiteBalanceFromSample"
+          >
+            SetWB
+          </button>
         </div>
         <p class="compact-info">
           {{ whiteBalance.auto ? 'Auto' : 'Handmatig' }} · Rood {{ formatColourGain(whiteBalance.red_gain) }} · Blauw {{ formatColourGain(whiteBalance.blue_gain) }} ·
@@ -803,6 +842,7 @@ onUnmounted(() => {
         <RgbHistogram
           :source-element="previewImage"
           :interval-ms="500"
+          @sample="updateRgbSample"
         />
         <div class="white-balance-adjustments">
           <div class="white-balance-adjustment">
