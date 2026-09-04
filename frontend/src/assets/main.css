@@ -4,6 +4,7 @@
 :root {
   --ui-border: color-mix(in srgb, var(--color-text) 28%, transparent);
   --ui-panel: color-mix(in srgb, var(--color-background-soft) 92%, transparent);
+  --ui-active-choice: #188038;
 }
 
 html,
@@ -70,6 +71,15 @@ section.ui-panel p {
   flex-wrap: nowrap;
   gap: 4px;
   min-width: 0;
+}
+
+#frame-rate-panel .button-row button:disabled,
+#exposure-panel .button-row button:disabled,
+#white-balance-panel .button-row button:first-child:disabled,
+#capture-panel .capture-mode button:disabled,
+#capture-panel .fov-setting button:disabled {
+  color: var(--ui-active-choice);
+  opacity: 1;
 }
 
 #exposure-panel .button-row {
