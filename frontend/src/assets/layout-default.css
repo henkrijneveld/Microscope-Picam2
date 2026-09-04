@@ -142,14 +142,14 @@
   min-width: 0;
   height: 20px;
   display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
+  grid-template-columns: 82px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   overflow: hidden;
 }
 
 .capture-progress {
-  width: 52px;
+  width: 82px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 3px;
