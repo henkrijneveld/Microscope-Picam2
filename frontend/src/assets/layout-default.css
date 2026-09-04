@@ -109,7 +109,7 @@
   grid-area: capture;
   display: grid;
   grid-template-columns: minmax(180px, 1fr) auto auto;
-  grid-template-rows: 28px 20px;
+  grid-template-rows: 28px 28px 20px;
   align-items: center;
   column-gap: 8px;
   row-gap: 6px;
@@ -130,11 +130,21 @@
 }
 
 #capture-panel .capture-mode,
-#capture-panel .capture-action {
+#capture-panel .capture-action,
+#capture-panel .fov-setting {
   display: flex;
   align-items: center;
   gap: 4px;
   white-space: nowrap;
+}
+
+#capture-panel .fov-setting {
+  grid-column: 1 / -1;
+}
+
+#capture-panel .fov-setting input {
+  width: 90px;
+  min-width: 0;
 }
 
 #capture-feedback {
