@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   modelValue: {
@@ -9,6 +9,14 @@ const props = defineProps({
   step: {
     type: Number,
     default: 1,
+  },
+  innerStep: {
+    type: Number,
+    default: null,
+  },
+  outerStep: {
+    type: Number,
+    default: null,
   },
   min: {
     type: Number,
@@ -30,14 +38,21 @@ const props = defineProps({
 
 const emit = defineEmits(['commit'])
 
-function stepDecimals() {
-  const step = Math.abs(Number(props.step))
+const activeInnerStep = computed(() => (
+  props.innerStep == null ? props.step : props.innerStep
+))
+const activeOuterStep = computed(() => (
+  props.outerStep == null ? props.step * 10 : props.outerStep
+))
 
-  if (!Number.isFinite(step) || step === 0) {
+function decimalPlaces(value) {
+  const number = Math.abs(Number(value))
+
+  if (!Number.isFinite(number) || number === 0) {
     return 0
   }
 
-  const text = String(step).toLowerCase()
+  const text = String(number).toLowerCase()
 
   if (text.includes('e-')) {
     return Number(text.split('e-')[1]) || 0
@@ -45,6 +60,14 @@ function stepDecimals() {
 
   const decimalPart = text.split('.')[1]
   return decimalPart ? decimalPart.length : 0
+}
+
+function stepDecimals() {
+  return Math.max(
+    decimalPlaces(props.step),
+    decimalPlaces(activeInnerStep.value),
+    decimalPlaces(activeOuterStep.value),
+  )
 }
 
 function formatValue(value) {
@@ -57,13 +80,27 @@ function formatValue(value) {
   return number.toFixed(stepDecimals())
 }
 
+function formatButtonStep(value) {
+  const number = Number(value)
+
+  if (!Number.isFinite(number)) {
+    return String(value)
+  }
+
+  return String(Number(number.toFixed(stepDecimals()))).replace('.', ',')
+}
+
+function buttonLabel(direction, amount) {
+  return `${direction < 0 ? '-' : '+'}${formatButtonStep(amount)}`
+}
+
 const draft = ref(formatValue(props.modelValue))
 const editing = ref(false)
 const suppressBlurCommit = ref(false)
 
 watch(
-  () => props.modelValue,
-  (value) => {
+  () => [props.modelValue, props.step, props.innerStep, props.outerStep],
+  ([value]) => {
     if (!editing.value) {
       draft.value = formatValue(value)
     }
@@ -101,11 +138,11 @@ function prepareButtonAction() {
   suppressBlurCommit.value = true
 }
 
-function stepBy(multiplier) {
+function stepBy(delta) {
   suppressBlurCommit.value = false
   const current = Number(draft.value)
   const base = Number.isFinite(current) ? current : props.modelValue
-  commit(base + multiplier * props.step)
+  commit(base + delta)
 }
 
 function commitDraft() {
@@ -137,22 +174,24 @@ function handleKeydown(event) {
       :disabled="disabled"
       type="button"
       @mousedown="prepareButtonAction"
-      @click="stepBy(-10)"
+      @click="stepBy(-activeOuterStep)"
     >
-      -10
+      {{ buttonLabel(-1, activeOuterStep) }}
     </button>
     <button
       :disabled="disabled"
       type="button"
       @mousedown="prepareButtonAction"
-      @click="stepBy(-1)"
+      @click="stepBy(-activeInnerStep)"
     >
-      -1
+      {{ buttonLabel(-1, activeInnerStep) }}
     </button>
     <input
       v-model="draft"
       :disabled="disabled"
       :step="step"
+      :min="min"
+      :max="max"
       type="number"
       inputmode="decimal"
       @focus="editing = true"
@@ -164,17 +203,17 @@ function handleKeydown(event) {
       :disabled="disabled"
       type="button"
       @mousedown="prepareButtonAction"
-      @click="stepBy(1)"
+      @click="stepBy(activeInnerStep)"
     >
-      +1
+      {{ buttonLabel(1, activeInnerStep) }}
     </button>
     <button
       :disabled="disabled"
       type="button"
       @mousedown="prepareButtonAction"
-      @click="stepBy(10)"
+      @click="stepBy(activeOuterStep)"
     >
-      +10
+      {{ buttonLabel(1, activeOuterStep) }}
     </button>
   </div>
 </template>
