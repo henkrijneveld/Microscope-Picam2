@@ -82,6 +82,10 @@ section.ui-panel p {
   opacity: 1;
 }
 
+#white-balance-panel:has(.white-balance-adjustments input:not(:disabled)) .button-row button:nth-child(2) {
+  color: var(--ui-active-choice);
+}
+
 #exposure-panel .button-row {
   margin-block: 4px;
 }
