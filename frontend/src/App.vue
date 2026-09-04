@@ -33,16 +33,6 @@ const filesDirectory = ref(null)
 const filesBusy = ref(false)
 const filesError = ref(null)
 
-const exposureValues = [
-  { value: -1, label: '-1' },
-  { value: -0.5, label: '-1/2' },
-  { value: -0.25, label: '-1/4' },
-  { value: 0, label: '0' },
-  { value: 0.25, label: '+1/4' },
-  { value: 0.5, label: '+1/2' },
-  { value: 1, label: '+1' },
-]
-
 let exposureTimer = null
 let whiteBalanceTimer = null
 let photoStatusTimer = null
@@ -248,7 +238,7 @@ async function setExposureValue(value) {
     })
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
+      throw new Error(await getResponseError(response))
     }
 
     return response.json()
@@ -761,16 +751,17 @@ onUnmounted(() => {
           </button>
         </div>
 
-        <div class="button-row">
-          <button
-            v-for="item in exposureValues"
-            :key="item.value"
-            :disabled="cameraControlBusy || photoBusy || !exposure.auto || exposure.exposure_value === item.value"
-            @click="setExposureValue(item.value)"
-          >
-            {{ item.label }}
-          </button>
-        </div>
+        <NumberStepper
+          :model-value="exposure.exposure_value ?? 0"
+          :step="0.5"
+          :inner-step="0.5"
+          :outer-step="exposure.aeb_stops ?? 1"
+          :min="exposure.exposure_value_min ?? -2"
+          :max="exposure.exposure_value_max ?? 2"
+          suffix="EV"
+          :disabled="cameraControlBusy || photoBusy || !exposure.auto"
+          @commit="setExposureValue"
+        />
 
         <NumberStepper
           :model-value="exposure.exposure_time_us == null ? 0 : exposure.exposure_time_us / 1000"
