@@ -12,6 +12,7 @@ const props = defineProps({
   },
 })
 
+const emit = defineEmits(['sample'])
 const histogramCanvas = ref(null)
 
 const SAMPLE_WIDTH = 160
@@ -180,11 +181,32 @@ function drawHistogramFromPixels(pixels) {
   const red = new Uint32Array(256)
   const green = new Uint32Array(256)
   const blue = new Uint32Array(256)
+  let redTotal = 0
+  let greenTotal = 0
+  let blueTotal = 0
 
   for (let index = 0; index < pixels.length; index += 4) {
-    red[pixels[index]] += 1
-    green[pixels[index + 1]] += 1
-    blue[pixels[index + 2]] += 1
+    const redValue = pixels[index]
+    const greenValue = pixels[index + 1]
+    const blueValue = pixels[index + 2]
+
+    red[redValue] += 1
+    green[greenValue] += 1
+    blue[blueValue] += 1
+
+    redTotal += redValue
+    greenTotal += greenValue
+    blueTotal += blueValue
+  }
+
+  const pixelCount = pixels.length / 4
+
+  if (pixelCount > 0) {
+    emit('sample', {
+      red: redTotal / pixelCount,
+      green: greenTotal / pixelCount,
+      blue: blueTotal / pixelCount,
+    })
   }
 
   let maximum = 1
