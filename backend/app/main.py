@@ -132,6 +132,7 @@ white_balance_gains: tuple[float, float] | None = None
 saturation_value = 1.0
 
 ALLOWED_FRAME_RATES = {1, 5, 15}
+ALLOWED_FOV_UNITS = {"µm", "mm", "cm"}
 
 
 class ExposureSettings(BaseModel):
@@ -159,6 +160,8 @@ class PhotoSettings(BaseModel):
     name: str
     mode: str | None = None
     aeb: bool | None = None
+    fov_value: float | None = None
+    fov_unit: str | None = None
 
 
 class WhiteBalanceSettings(BaseModel):
@@ -543,6 +546,8 @@ def build_photo_metadata(
     *,
     capture_mode: str,
     aeb: bool,
+    fov_value: float | None = None,
+    fov_unit: str | None = None,
     aeb_ev: float | None = None,
     base_exposure_us: int | None = None,
 ):
@@ -572,6 +577,11 @@ def build_photo_metadata(
                 else None
             ),
             "saturation": saturation_value,
+            "FOV": (
+                {"value": fov_value, "unit": fov_unit}
+                if fov_value is not None and fov_unit is not None
+                else None
+            ),
             "capture_mode": capture_mode,
             "aeb": aeb,
             "aeb_stops": AEB_STOPS if aeb else None,
@@ -638,6 +648,19 @@ def take_photo(settings: PhotoSettings):
             status_code=400,
             detail="Photo name is required",
         )
+
+    if settings.fov_value is not None:
+        if settings.fov_value <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="FOV must be greater than 0",
+            )
+
+        if settings.fov_unit not in ALLOWED_FOV_UNITS:
+            raise HTTPException(
+                status_code=400,
+                detail="FOV unit must be µm, mm or cm",
+            )
 
     capture_mode = settings.mode
 
@@ -784,6 +807,8 @@ def take_photo(settings: PhotoSettings):
                             captured_metadata,
                             capture_mode=capture_mode,
                             aeb=True,
+                            fov_value=settings.fov_value,
+                            fov_unit=settings.fov_unit,
                             aeb_ev=ev,
                             base_exposure_us=int(current_exposure),
                         )
@@ -836,6 +861,8 @@ def take_photo(settings: PhotoSettings):
                         captured_metadata,
                         capture_mode=capture_mode,
                         aeb=False,
+                        fov_value=settings.fov_value,
+                        fov_unit=settings.fov_unit,
                     )
                     photo_data = embed_photo_metadata(
                         photo.getvalue(),
