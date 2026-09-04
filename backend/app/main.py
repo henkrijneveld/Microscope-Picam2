@@ -626,10 +626,21 @@ def restore_live_view(current_exposure):
             "output_size": LIVE_SENSOR_SIZE,
             "bit_depth": 12,
         },
-        controls=restore_controls,
     )
 
-    picam2.switch_mode(preview_config)
+    try:
+        picam2.stop_encoder()
+    except Exception:
+        pass
+
+    try:
+        picam2.stop()
+    except Exception:
+        pass
+
+    picam2.configure(preview_config)
+    picam2.set_controls(restore_controls)
+    picam2.start()
     picam2.set_controls(restore_controls)
     picam2.capture_metadata()
     start_stream_encoder()
