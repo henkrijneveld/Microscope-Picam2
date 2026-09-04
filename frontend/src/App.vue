@@ -21,7 +21,7 @@ const saturationError = ref(null)
 const photoBusy = ref(false)
 const photoError = ref(null)
 const photoName = ref('microscope')
-const aebEnabled = ref(false)
+const captureMode = ref('single')
 const photoProgress = ref(null)
 const lastSavedFiles = ref([])
 const shutdownBusy = ref(false)
@@ -48,6 +48,22 @@ let whiteBalanceTimer = null
 let photoStatusTimer = null
 let cameraControlVersion = 0
 let saturationControlVersion = 0
+
+function isHdrMode() {
+  return captureMode.value !== 'single'
+}
+
+function captureModeLabel(mode = captureMode.value) {
+  if (mode === 'hdr3') {
+    return 'HDR-3'
+  }
+
+  if (mode === 'hdr5') {
+    return 'HDR-5'
+  }
+
+  return 'Enkel'
+}
 
 function formatExposureTime(exposureTimeUs) {
   if (exposureTimeUs == null) {
@@ -198,7 +214,7 @@ async function takePhoto() {
       },
       body: JSON.stringify({
         name: photoName.value,
-        aeb: aebEnabled.value,
+        mode: captureMode.value,
       }),
     })
 
@@ -855,18 +871,24 @@ onUnmounted(() => {
       </label>
 
       <div class="capture-mode">
-        <span>AEB</span>
+        <span>Opname</span>
         <button
-          :disabled="photoBusy || !aebEnabled"
-          @click="aebEnabled = false"
+          :disabled="photoBusy || captureMode === 'single'"
+          @click="captureMode = 'single'"
         >
-          Nee
+          Enkel
         </button>
         <button
-          :disabled="photoBusy || aebEnabled"
-          @click="aebEnabled = true"
+          :disabled="photoBusy || captureMode === 'hdr3'"
+          @click="captureMode = 'hdr3'"
         >
-          Ja
+          HDR-3
+        </button>
+        <button
+          :disabled="photoBusy || captureMode === 'hdr5'"
+          @click="captureMode = 'hdr5'"
+        >
+          HDR-5
         </button>
       </div>
 
@@ -875,23 +897,24 @@ onUnmounted(() => {
           :disabled="photoBusy || !photoName.trim()"
           @click="takePhoto"
         >
-          {{ photoBusy ? (aebEnabled ? 'AEB maken...' : 'Foto maken...') : 'Foto nemen' }}
+          {{ photoBusy ? (isHdrMode() ? `${captureModeLabel()} maken...` : 'Foto maken...') : 'Foto nemen' }}
         </button>
       </div>
 
       <div
         id="capture-feedback"
         aria-live="polite"
-        :style="{ gridTemplateColumns: photoBusy && aebEnabled ? '52px minmax(0, 1fr)' : 'minmax(0, 1fr)' }"
+        :style="{ gridTemplateColumns: photoBusy && isHdrMode() ? '82px minmax(0, 1fr)' : 'minmax(0, 1fr)' }"
       >
         <div
-          v-show="photoBusy && aebEnabled"
+          v-show="photoBusy && isHdrMode()"
           class="capture-progress"
-          :class="{ visible: photoBusy && aebEnabled }"
+          :class="{ visible: photoBusy && isHdrMode() }"
+          :style="{ gridTemplateColumns: `repeat(${photoProgress?.total || (captureMode === 'hdr5' ? 5 : 3)}, 1fr)` }"
           aria-hidden="true"
         >
           <span
-            v-for="step in 3"
+            v-for="step in (photoProgress?.total || (captureMode === 'hdr5' ? 5 : 3))"
             :key="step"
             class="capture-progress-block"
             :class="{ complete: photoProgress?.aeb && photoProgress.step >= step }"
@@ -909,7 +932,7 @@ onUnmounted(() => {
           v-else-if="photoBusy && photoProgress?.aeb"
           id="capture-status-text"
         >
-          AEB opname
+          {{ captureModeLabel(photoProgress.mode) }} opname
           <template v-if="photoProgress.step > 0">
             {{ photoProgress.step }}/{{ photoProgress.total }} · {{ formatAebEv(photoProgress.ev) }}
           </template>
