@@ -81,6 +81,9 @@ AEB_STEP_SETS = {
     "hdr5": tuple(make_aeb_step(multiplier) for multiplier in (-2, -1, 0, 1, 2)),
 }
 
+EXPOSURE_VALUE_MIN = -2 * AEB_STOPS
+EXPOSURE_VALUE_MAX = 2 * AEB_STOPS
+
 SATURATION_FACTOR = get_saturation_factor()
 SATURATION_MIN = 1 / SATURATION_FACTOR
 SATURATION_MAX = SATURATION_FACTOR
@@ -129,7 +132,6 @@ white_balance_gains: tuple[float, float] | None = None
 saturation_value = 1.0
 
 ALLOWED_FRAME_RATES = {1, 5, 15}
-ALLOWED_EXPOSURE_VALUES = {-1.0, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0}
 
 
 class ExposureSettings(BaseModel):
@@ -1003,6 +1005,9 @@ def get_exposure():
     return {
         "auto": exposure_auto,
         "exposure_value": exposure_value,
+        "exposure_value_min": EXPOSURE_VALUE_MIN,
+        "exposure_value_max": EXPOSURE_VALUE_MAX,
+        "aeb_stops": AEB_STOPS,
         "exposure_time_us": exposure_time_us,
         "analogue_gain": metadata.get("AnalogueGain"),
         "digital_gain": metadata.get("DigitalGain"),
@@ -1044,6 +1049,9 @@ def set_exposure(settings: ExposureSettings):
     return {
         "auto": exposure_auto,
         "exposure_value": exposure_value,
+        "exposure_value_min": EXPOSURE_VALUE_MIN,
+        "exposure_value_max": EXPOSURE_VALUE_MAX,
+        "aeb_stops": AEB_STOPS,
         "exposure_time_us": (
             manual_exposure_time_us
             if not exposure_auto
@@ -1065,21 +1073,29 @@ def set_exposure_value(settings: ExposureValueSettings):
             detail="Exposure compensation is only available in auto mode",
         )
 
-    if settings.value not in ALLOWED_EXPOSURE_VALUES:
+    value = float(settings.value)
+
+    if not EXPOSURE_VALUE_MIN <= value <= EXPOSURE_VALUE_MAX:
         raise HTTPException(
             status_code=400,
-            detail="Exposure value must be -1, -0.5, -0.25, 0, 0.25, 0.5 or 1",
+            detail=(
+                f"Exposure value must be between {EXPOSURE_VALUE_MIN:g} "
+                f"and {EXPOSURE_VALUE_MAX:g} EV"
+            ),
         )
 
     with camera_lock:
         picam2.set_controls({
-            "ExposureValue": settings.value,
+            "ExposureValue": value,
         })
-        exposure_value = settings.value
+        exposure_value = value
 
     return {
         "auto": True,
         "exposure_value": exposure_value,
+        "exposure_value_min": EXPOSURE_VALUE_MIN,
+        "exposure_value_max": EXPOSURE_VALUE_MAX,
+        "aeb_stops": AEB_STOPS,
     }
 
 
