@@ -73,6 +73,8 @@ section.ui-panel p {
   min-width: 0;
 }
 
+#navigation-panel button:first-child:disabled,
+#files-layout nav button:nth-child(2):disabled,
 #frame-rate-panel .button-row button:disabled,
 #exposure-panel .button-row button:disabled,
 #white-balance-panel .button-row button:first-child:disabled,
