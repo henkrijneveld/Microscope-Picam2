@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MicroRasp - Laatste foto</title>
+    <link rel="stylesheet" href="/latest-photo.css">
+  </head>
+  <body>
+    <main id="latest-layout">
+      <header id="topbar">
+        <nav id="navigation-panel" aria-label="Hoofdnavigatie">
+          <button id="camera-button" type="button">Camera</button>
+          <button id="files-button" type="button">Bestanden</button>
+          <button class="active-choice" type="button" disabled>Laatste foto</button>
+          <button id="shutdown-button" type="button">Stop Pi</button>
+        </nav>
+
+        <section id="system-status" aria-live="polite">
+          <span class="status-primary">MicroRasp</span>
+          <span class="status-detail">status ophalen...</span>
+        </section>
+      </header>
+
+      <section id="thumbnail-panel" aria-label="Laatste HDR-opnamen" hidden></section>
+
+      <section id="photo-panel" aria-label="Laatste foto">
+        <img id="main-photo" alt="Laatste foto" hidden>
+        <p id="empty-message">Laatste foto ophalen...</p>
+      </section>
+    </main>
+
+    <script type="module" src="/latest-photo.js"></script>
+  </body>
+</html>
