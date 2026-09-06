@@ -1123,12 +1123,9 @@ def set_exposure_value(settings: ExposureValueSettings):
         )
 
     with camera_lock:
-        picam2.set_controls({
-            "AeEnable": True,
-            "AeExposureMode": get_ae_exposure_mode(),
-            "ExposureValue": value,
-        })
         exposure_value = value
+        current_exposure = get_latest_metadata().get("ExposureTime")
+        restore_live_view(current_exposure)
 
     return {
         "auto": True,
