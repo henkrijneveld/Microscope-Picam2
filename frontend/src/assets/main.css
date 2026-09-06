@@ -4,7 +4,7 @@
 :root {
   --ui-border: color-mix(in srgb, var(--color-text) 28%, transparent);
   --ui-panel: color-mix(in srgb, var(--color-background-soft) 92%, transparent);
-  --ui-active-choice: #188038;
+  --ui-active-choice: blue;
 }
 
 html,
