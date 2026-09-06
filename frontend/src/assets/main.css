@@ -200,11 +200,11 @@ section.ui-panel p {
   height: 100%;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(8, minmax(32px, 1fr));
+  grid-template-rows: repeat(var(--files-rows, 8), 32px);
   grid-auto-flow: column;
   column-gap: 14px;
   row-gap: 3px;
-  align-content: stretch;
+  align-content: start;
 }
 
 #files-layout tbody tr {
