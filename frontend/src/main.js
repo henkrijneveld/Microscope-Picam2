@@ -4,7 +4,21 @@ import { createApp } from 'vue'
 import App from './App.vue'
 
 const FOCUS_STACK_STORAGE_KEY = 'microrasp-focus-stack'
-const FILES_PER_PAGE = 16
+const FILE_ROW_HEIGHT = 32
+const FILE_ROW_GAP = 3
+const FILES_PER_PAGE = {
+  [Symbol.toPrimitive]() {
+    const body = document.querySelector('#files-layout tbody')
+    const availableHeight = body?.clientHeight || FILE_ROW_HEIGHT
+    const rowsPerColumn = Math.max(
+      1,
+      Math.floor((availableHeight + FILE_ROW_GAP) / (FILE_ROW_HEIGHT + FILE_ROW_GAP)),
+    )
+
+    body?.style.setProperty('--files-rows', String(rowsPerColumn))
+    return rowsPerColumn * 2
+  },
+}
 const nativeFetch = window.fetch.bind(window)
 
 const focusStackState = {
@@ -302,7 +316,8 @@ function updateFilesPagination() {
   }
 
   const rows = Array.from(layout.querySelectorAll('tbody tr'))
-  const totalPages = rows.length ? Math.ceil(rows.length / FILES_PER_PAGE) : 0
+  const filesPerPage = Number(FILES_PER_PAGE)
+  const totalPages = rows.length ? Math.ceil(rows.length / filesPerPage) : 0
 
   if (totalPages === 0) {
     filesPage = 0
@@ -310,8 +325,8 @@ function updateFilesPagination() {
     filesPage = Math.max(0, Math.min(filesPage, totalPages - 1))
   }
 
-  const start = filesPage * FILES_PER_PAGE
-  const end = start + FILES_PER_PAGE
+  const start = filesPage * filesPerPage
+  const end = start + filesPerPage
 
   rows.forEach((row, index) => {
     row.hidden = index < start || index >= end
@@ -360,3 +375,5 @@ navigationObserver.observe(document.getElementById('app'), {
   childList: true,
   subtree: true,
 })
+
+window.addEventListener('resize', updateFilesPagination)
