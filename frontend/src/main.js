@@ -255,7 +255,7 @@ async function loadFilesSystemStatus(element) {
 }
 
 function updateFilesPagination() {
-  const panel = document.getElementById('files-panel')
+  const panel = document.querySelector('#files-layout section.ui-panel')
 
   if (!panel) {
     return
@@ -301,36 +301,35 @@ function enhanceFilesPage() {
     return
   }
 
-  let header = document.getElementById('files-topbar')
+  const navigation = layout.querySelector('nav')
+  const panel = layout.querySelector('section.ui-panel')
 
-  if (!header) {
-    filesPage = 0
+  if (!navigation || !panel) {
+    return
+  }
 
-    const navigation = layout.querySelector('nav')
-    const panel = layout.querySelector('section.ui-panel')
+  navigation.id = 'files-navigation-panel'
+  panel.id = 'files-panel'
 
-    if (!navigation || !panel) {
-      return
-    }
+  let systemStatus = navigation.querySelector('[data-files-system-status]')
 
-    header = document.createElement('header')
-    header.id = 'files-topbar'
-    layout.insertBefore(header, navigation)
-
-    navigation.id = 'files-navigation-panel'
-    header.appendChild(navigation)
-
-    const systemStatus = document.createElement('section')
+  if (!systemStatus) {
+    systemStatus = document.createElement('span')
+    systemStatus.dataset.filesSystemStatus = ''
     systemStatus.id = 'files-system-status'
     systemStatus.setAttribute('aria-live', 'polite')
     setFilesSystemStatus(systemStatus, 'MicroRasp', 'status ophalen...')
-    header.appendChild(systemStatus)
+    navigation.appendChild(systemStatus)
     loadFilesSystemStatus(systemStatus)
+  }
 
-    panel.id = 'files-panel'
+  let pager = panel.querySelector('[data-files-pager]')
 
-    const pager = document.createElement('div')
+  if (!pager) {
+    filesPage = 0
+    pager = document.createElement('div')
     pager.className = 'files-pager'
+    pager.dataset.filesPager = ''
 
     const previous = document.createElement('button')
     previous.type = 'button'
