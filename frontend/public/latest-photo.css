@@ -1,8 +1,20 @@
 :root {
+  --color-background: #ffffff;
+  --color-background-soft: #f8f8f8;
+  --color-text: #2c3e50;
   --ui-border: rgba(60, 60, 60, 0.28);
-  --ui-panel: #f7f7f7;
+  --ui-panel: rgba(248, 248, 248, 0.92);
   --ui-active-choice: blue;
-  --ui-text: #2c3e50;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: #181818;
+    --color-background-soft: #222222;
+    --color-text: rgba(235, 235, 235, 0.64);
+    --ui-border: rgba(235, 235, 235, 0.28);
+    --ui-panel: rgba(34, 34, 34, 0.92);
+  }
 }
 
 * {
@@ -19,8 +31,10 @@ body {
 body {
   overflow: hidden;
   font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: var(--ui-text);
-  background: #fff;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text);
+  background: var(--color-background);
 }
 
 button {
@@ -145,11 +159,12 @@ button.active-choice:disabled {
 
 #empty-message {
   margin: 0;
+  color: #2c3e50;
   text-align: center;
 }
 
 .error-message {
-  color: #b00020;
+  color: #b00020 !important;
 }
 
 @media (max-width: 780px), (max-height: 540px) {
