@@ -15,6 +15,8 @@ const focusStackState = {
 
 let focusStackBusy = false
 let filesPage = 0
+let filesLayoutElement = null
+let filesPager = null
 
 function formatStackTimestamp(date) {
   const two = (value) => String(value).padStart(2, '0')
@@ -210,23 +212,57 @@ function addLatestPhotoNavigation() {
   }
 }
 
-function setFilesSystemStatus(element, primary, detail = '') {
-  element.innerHTML = ''
-
-  const primaryElement = document.createElement('span')
-  primaryElement.className = 'status-primary'
-  primaryElement.textContent = primary
-  element.appendChild(primaryElement)
-
-  if (detail) {
-    const detailElement = document.createElement('span')
-    detailElement.className = 'status-detail'
-    detailElement.textContent = detail
-    element.appendChild(detailElement)
+function ensureFilesPager() {
+  if (filesPager) {
+    return filesPager
   }
+
+  filesPager = document.createElement('div')
+  filesPager.id = 'files-pager-portal'
+  filesPager.hidden = true
+
+  const previous = document.createElement('button')
+  previous.type = 'button'
+  previous.textContent = 'Vorige'
+  previous.dataset.filesPrevious = ''
+  previous.addEventListener('click', () => {
+    if (filesPage > 0) {
+      filesPage -= 1
+      updateFilesPagination()
+    }
+  })
+
+  const indicator = document.createElement('span')
+  indicator.dataset.filesPage = ''
+  indicator.className = 'files-page-indicator'
+
+  const next = document.createElement('button')
+  next.type = 'button'
+  next.textContent = 'Volgende'
+  next.dataset.filesNext = ''
+  next.addEventListener('click', () => {
+    const rowCount = document.querySelectorAll('#files-layout tbody tr').length
+    const totalPages = Math.ceil(rowCount / FILES_PER_PAGE)
+
+    if (filesPage < totalPages - 1) {
+      filesPage += 1
+      updateFilesPagination()
+    }
+  })
+
+  filesPager.append(previous, indicator, next)
+  document.body.appendChild(filesPager)
+  return filesPager
 }
 
-async function loadFilesSystemStatus(element) {
+async function loadFilesSystemStatus(layout) {
+  if (layout.dataset.statusLoading === 'true' || layout.dataset.statusLoaded === 'true') {
+    return
+  }
+
+  layout.dataset.statusLoading = 'true'
+  layout.dataset.statusText = 'MicroRasp · status ophalen...'
+
   try {
     const response = await nativeFetch('/api/status')
 
@@ -237,31 +273,35 @@ async function loadFilesSystemStatus(element) {
     const result = await response.json()
 
     if (!result.camera?.connected) {
-      setFilesSystemStatus(element, 'MicroRasp: fout', 'camera niet verbonden')
+      layout.dataset.statusText = 'MicroRasp: fout · camera niet verbonden'
       return
     }
 
-    const detail = [
+    layout.dataset.statusText = [
+      `MicroRasp: ${result.status}`,
       'verbonden',
       result.camera.model || 'model onbekend',
       result.camera.hostname || '—',
       result.camera.ip_address || '—',
     ].join(' · ')
-
-    setFilesSystemStatus(element, `MicroRasp: ${result.status}`, detail)
   } catch (error) {
-    setFilesSystemStatus(element, 'MicroRasp: fout', error.message)
+    layout.dataset.statusText = `MicroRasp: fout · ${error.message}`
+  } finally {
+    delete layout.dataset.statusLoading
+    layout.dataset.statusLoaded = 'true'
   }
 }
 
 function updateFilesPagination() {
-  const panel = document.querySelector('#files-layout section.ui-panel')
+  const layout = document.getElementById('files-layout')
+  const pager = ensureFilesPager()
 
-  if (!panel) {
+  if (!layout) {
+    pager.hidden = true
     return
   }
 
-  const rows = Array.from(panel.querySelectorAll('tbody tr'))
+  const rows = Array.from(layout.querySelectorAll('tbody tr'))
   const totalPages = rows.length ? Math.ceil(rows.length / FILES_PER_PAGE) : 0
 
   if (totalPages === 0) {
@@ -277,93 +317,33 @@ function updateFilesPagination() {
     row.hidden = index < start || index >= end
   })
 
-  const previous = panel.querySelector('[data-files-previous]')
-  const next = panel.querySelector('[data-files-next]')
-  const indicator = panel.querySelector('[data-files-page]')
+  const previous = pager.querySelector('[data-files-previous]')
+  const next = pager.querySelector('[data-files-next]')
+  const indicator = pager.querySelector('[data-files-page]')
 
-  if (previous) {
-    previous.disabled = totalPages <= 1 || filesPage === 0
-  }
-
-  if (next) {
-    next.disabled = totalPages <= 1 || filesPage >= totalPages - 1
-  }
-
-  if (indicator) {
-    indicator.textContent = totalPages ? `${filesPage + 1} / ${totalPages}` : '0 / 0'
-  }
+  previous.disabled = totalPages <= 1 || filesPage === 0
+  next.disabled = totalPages <= 1 || filesPage >= totalPages - 1
+  indicator.textContent = totalPages ? `${filesPage + 1} / ${totalPages}` : '0 / 0'
+  pager.hidden = false
 }
 
 function enhanceFilesPage() {
   const layout = document.getElementById('files-layout')
 
   if (!layout) {
+    if (filesPager) {
+      filesPager.hidden = true
+    }
+    filesLayoutElement = null
     return
   }
 
-  const navigation = layout.querySelector('nav')
-  const panel = layout.querySelector('section.ui-panel')
-
-  if (!navigation || !panel) {
-    return
-  }
-
-  navigation.id = 'files-navigation-panel'
-  panel.id = 'files-panel'
-
-  let systemStatus = navigation.querySelector('[data-files-system-status]')
-
-  if (!systemStatus) {
-    systemStatus = document.createElement('span')
-    systemStatus.dataset.filesSystemStatus = ''
-    systemStatus.id = 'files-system-status'
-    systemStatus.setAttribute('aria-live', 'polite')
-    setFilesSystemStatus(systemStatus, 'MicroRasp', 'status ophalen...')
-    navigation.appendChild(systemStatus)
-    loadFilesSystemStatus(systemStatus)
-  }
-
-  let pager = panel.querySelector('[data-files-pager]')
-
-  if (!pager) {
+  if (layout !== filesLayoutElement) {
+    filesLayoutElement = layout
     filesPage = 0
-    pager = document.createElement('div')
-    pager.className = 'files-pager'
-    pager.dataset.filesPager = ''
-
-    const previous = document.createElement('button')
-    previous.type = 'button'
-    previous.textContent = 'Vorige'
-    previous.dataset.filesPrevious = ''
-    previous.addEventListener('click', () => {
-      if (filesPage > 0) {
-        filesPage -= 1
-        updateFilesPagination()
-      }
-    })
-
-    const indicator = document.createElement('span')
-    indicator.dataset.filesPage = ''
-    indicator.className = 'files-page-indicator'
-
-    const next = document.createElement('button')
-    next.type = 'button'
-    next.textContent = 'Volgende'
-    next.dataset.filesNext = ''
-    next.addEventListener('click', () => {
-      const rowCount = panel.querySelectorAll('tbody tr').length
-      const totalPages = Math.ceil(rowCount / FILES_PER_PAGE)
-
-      if (filesPage < totalPages - 1) {
-        filesPage += 1
-        updateFilesPagination()
-      }
-    })
-
-    pager.append(previous, indicator, next)
-    panel.appendChild(pager)
   }
 
+  loadFilesSystemStatus(layout)
   updateFilesPagination()
 }
 
