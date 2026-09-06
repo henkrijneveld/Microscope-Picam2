@@ -21,7 +21,7 @@ if [ ! -f "$FRONTEND_DIST" ]; then
   exit 1
 fi
 
-exec .venv/bin/uvicorn backend.app.main:app \
+exec .venv/bin/uvicorn backend.app.entry:app \
   --host 0.0.0.0 \
   --port 8000 \
   --timeout-graceful-shutdown 2
