@@ -2,8 +2,6 @@
 set -euo pipefail
 
 timestamp="${1:?Gebruik: $0 YYMMDD-HHMMSS}"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON="$SCRIPT_DIR/.venv/bin/python"
 
 shopt -s nullglob
 inputs=( "${timestamp}-"*-AEB-*.jpg )
@@ -31,13 +29,8 @@ if [ ! -f "$aeb0" ]; then
     exit 1
 fi
 
-if [ ! -x "$PYTHON" ]; then
-    echo "Python uit project-venv niet gevonden: $PYTHON" >&2
-    exit 1
-fi
-
 if ! command -v exiftool >/dev/null 2>&1; then
-    echo "exiftool ontbreekt. Installeer met: sudo apt install libimage-exiftool-perl" >&2
+    echo "exiftool ontbreekt." >&2
     exit 1
 fi
 
@@ -55,33 +48,17 @@ convert "$tif" "$jpg"
 convert "$tif" -contrast-stretch 0.3%x0.3% "$contrast"
 
 # Neem alleen de FOV uit de EXIF UserComment-JSON van AEB-0 over.
-fov_json="$($PYTHON - "$aeb0" <<'PY'
-import json
-import sys
+# Geen Python nodig: ExifTool leest UserComment en Bash haalt het FOV-object eruit.
+user_comment="$(exiftool -s3 -EXIF:UserComment "$aeb0")"
 
-import piexif
-import piexif.helper
+if [[ $user_comment =~ \"FOV\":(\{[^}]*\}) ]]; then
+    fov_object="${BASH_REMATCH[1]}"
+else
+    echo "AEB-0 bevat geen FOV metadata" >&2
+    exit 1
+fi
 
-source = sys.argv[1]
-exif = piexif.load(source)
-user_comment = exif.get("Exif", {}).get(piexif.ExifIFD.UserComment)
-
-if not user_comment:
-    raise SystemExit("AEB-0 bevat geen EXIF UserComment")
-
-metadata = json.loads(piexif.helper.UserComment.load(user_comment))
-fov = metadata.get("microscope_picam2", {}).get("FOV")
-
-if not fov:
-    raise SystemExit("AEB-0 bevat geen FOV metadata")
-
-print(json.dumps(
-    {"microscope_picam2": {"FOV": fov}},
-    ensure_ascii=False,
-    separators=(",", ":"),
-))
-PY
-)"
+fov_json="{\"microscope_picam2\":{\"FOV\":${fov_object}}}"
 
 exiftool -overwrite_original \
     "-EXIF:UserComment=$fov_json" \
