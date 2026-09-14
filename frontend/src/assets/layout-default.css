@@ -210,7 +210,8 @@
   #camera-layout {
     height: auto;
     min-height: 100dvh;
-    grid-template-rows: auto auto auto;
+    grid-template-rows: max-content max-content max-content;
+    align-content: start;
     overflow: visible;
   }
 
