@@ -1,0 +1,16 @@
+@media (max-width: 780px), (max-height: 540px) {
+  html,
+  body,
+  #app {
+    height: auto;
+    min-height: 100%;
+  }
+
+  body {
+    overflow: auto;
+  }
+
+  #app {
+    min-height: 100dvh;
+  }
+}
