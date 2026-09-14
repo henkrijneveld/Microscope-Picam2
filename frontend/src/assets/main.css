@@ -1,5 +1,6 @@
 @import './base.css';
 @import './layout-default.css';
+@import './capture-responsive.css';
 
 :root {
   --ui-border: color-mix(in srgb, var(--color-text) 28%, transparent);
