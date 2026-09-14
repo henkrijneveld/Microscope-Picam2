@@ -3,6 +3,15 @@ set -euo pipefail
 
 timestamp="${1:?Gebruik: $0 YYMMDD-HHMMSS}"
 
+if command -v magick >/dev/null 2>&1; then
+    IMAGEMAGICK="magick"
+elif command -v convert >/dev/null 2>&1; then
+    IMAGEMAGICK="convert"
+else
+    echo "ImageMagick ontbreekt: geen 'magick' of 'convert' gevonden." >&2
+    exit 1
+fi
+
 shopt -s nullglob
 all_inputs=( "${timestamp}-"*-AEB-*.jpg )
 
@@ -43,10 +52,10 @@ process_series() {
     enfuse -o "$tif" "${inputs[@]}"
 
     # Gewone JPEG-versie van hetzelfde resultaat.
-    convert "$tif" "$jpg"
+    "$IMAGEMAGICK" "$tif" "$jpg"
 
-    # Contrast-stretch op de TIFF; ImageMagick 6 gebruikt het commando 'convert'.
-    convert "$tif" -contrast-stretch 0.3%x0.3% "$contrast"
+    # Contrast-stretch op de TIFF; werkt met ImageMagick 7 ('magick') en 6 ('convert').
+    "$IMAGEMAGICK" "$tif" -contrast-stretch 0.3%x0.3% "$contrast"
 
     # Neem alleen de FOV uit de EXIF UserComment-JSON van AEB-0 over.
     # Geen Python nodig: ExifTool leest UserComment en Bash haalt het FOV-object eruit.
@@ -88,5 +97,5 @@ for base in "${!series[@]}"; do
 done
 
 # install enfuse with: sudo apt install enfuse
-# install ImageMagick 6 with: sudo apt install imagemagick
+# install ImageMagick with: sudo apt install imagemagick
 # install ExifTool with: sudo apt install libimage-exiftool-perl
