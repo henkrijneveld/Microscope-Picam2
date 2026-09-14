@@ -211,3 +211,12 @@
     overflow: visible;
   }
 }
+
+@media (max-width: 780px), (hover: none) and (pointer: coarse) {
+  #controls-panel {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+}
