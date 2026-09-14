@@ -1,15 +1,36 @@
 @media (max-width: 900px) {
   #capture-panel {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: repeat(4, max-content);
+    align-content: start;
+    row-gap: 4px;
   }
 
-  #capture-panel > .photo-name,
-  #capture-panel > .capture-mode,
-  #capture-panel > .capture-action,
-  #capture-panel > .fov-setting,
+  #capture-panel > .photo-name {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  #capture-panel > .capture-mode {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  #capture-panel > .capture-action {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+    align-self: center;
+  }
+
+  #capture-panel > .fov-setting {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
   #capture-panel > #capture-feedback {
     grid-column: 1 / -1;
+    grid-row: 4;
   }
 
   #capture-panel .capture-mode,
