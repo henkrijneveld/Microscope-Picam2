@@ -1,0 +1,13 @@
+/*
+ * Een disabled knop betekent normaal "dit is de gekozen waarde" en is daarom blauw.
+ * Als een hele keuzegroep tijdelijk geblokkeerd is (bijvoorbeeld tijdens een opname),
+ * moet disabled juist als tijdelijk niet-beschikbaar ogen.
+ */
+#frame-rate-panel .button-row:not(:has(button:not(:disabled))) button:disabled,
+#exposure-panel .button-row:not(:has(button:not(:disabled))) button:disabled,
+#white-balance-panel .button-row:not(:has(button:not(:disabled))) button:disabled,
+#capture-panel .capture-mode:not(:has(button:not(:disabled))) button:disabled,
+#capture-panel .fov-setting:not(:has(button:not(:disabled))) button:disabled {
+  color: GrayText;
+  opacity: 0.65;
+}
