@@ -208,15 +208,13 @@
   }
 
   #camera-layout {
+    height: auto;
+    min-height: 100dvh;
+    grid-template-rows: auto auto auto;
     overflow: visible;
   }
-}
 
-@media (max-width: 780px), (hover: none) and (pointer: coarse) {
   #controls-panel {
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
   }
 }
