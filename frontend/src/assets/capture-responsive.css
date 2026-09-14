@@ -1,0 +1,35 @@
+@media (max-width: 900px) {
+  #capture-panel {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+
+  #capture-panel > .photo-name,
+  #capture-panel > .capture-mode,
+  #capture-panel > .capture-action,
+  #capture-panel > .fov-setting,
+  #capture-panel > #capture-feedback {
+    grid-column: 1 / -1;
+  }
+
+  #capture-panel .capture-mode,
+  #capture-panel .capture-action,
+  #capture-panel .fov-setting {
+    min-width: 0;
+  }
+
+  #capture-panel .fov-setting {
+    flex-wrap: wrap;
+  }
+
+  #capture-panel [data-focus-stack-controls] {
+    display: flex !important;
+    flex: 0 0 100%;
+    align-items: center;
+    gap: 4px;
+  }
+
+  #capture-panel [data-focus-stack-controls] > span:first-child {
+    margin-left: 0 !important;
+  }
+}
