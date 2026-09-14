@@ -215,6 +215,10 @@
   }
 
   #controls-panel {
+    min-height: max-content;
+    display: flex;
+    flex-direction: column;
+    align-self: start;
     overflow: visible;
   }
 }
