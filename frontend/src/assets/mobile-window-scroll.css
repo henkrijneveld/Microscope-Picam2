@@ -2,12 +2,12 @@
   html,
   body,
   #app {
-    height: auto;
+    height: auto !important;
     min-height: 100%;
   }
 
   body {
-    overflow: auto;
+    overflow: auto !important;
   }
 
   #app {
