@@ -61,10 +61,10 @@ fi
 
 echo "Deploying start, stop and installation scripts..."
 rsync -az \
-  runback.sh \
-  startcam.sh \
-  stopcam.sh \
-  install-autostart.sh \
+  dev/runback.sh \
+  dev/startcam.sh \
+  dev/stopcam.sh \
+  dev/install-autostart.sh \
   "$PI_HOST:~/$DEPLOY_DIR/"
 
 ssh "$PI_HOST" "chmod +x ~/$DEPLOY_DIR/runback.sh ~/$DEPLOY_DIR/startcam.sh ~/$DEPLOY_DIR/stopcam.sh ~/$DEPLOY_DIR/install-autostart.sh"
