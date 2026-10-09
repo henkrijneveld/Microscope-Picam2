@@ -157,9 +157,9 @@ cd frontend
 npm install
 ```
 
-Create `frontend/.env.local` from `frontend/.env.local.example` when needed.
-Development-only settings such as `PICAM_API_TARGET` and `PI_HOST` belong
-there.
+Create `.env.local` in the repository root from `.env.local.example` when needed.
+This single file is shared by the development tools and backend. Development-only
+settings such as `PICAM_API_TARGET` and `PI_HOST` can be kept there as well.
 
 Start the frontend development server with:
 

@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
-ENV_FILE="frontend/.env.local"
+ENV_FILE="$ROOT_DIR/.env.local"
 
 if [ -f "$ENV_FILE" ]; then
   set -a
@@ -56,7 +56,7 @@ if [ -f "$ENV_FILE" ]; then
   echo "Deploying local configuration..."
   rsync -az \
     "$ENV_FILE" \
-    "$PI_HOST:~/$DEPLOY_DIR/frontend/.env.local"
+    "$PI_HOST:~/$DEPLOY_DIR/.env.local"
 fi
 
 echo "Deploying start, stop and installation scripts..."

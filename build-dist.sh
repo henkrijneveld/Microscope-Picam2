@@ -43,7 +43,7 @@ cp release/stop.sh "$DIST_DIR/stop.sh"
 cp release/enable-autostart.sh "$DIST_DIR/enable-autostart.sh"
 cp release/disable-autostart.sh "$DIST_DIR/disable-autostart.sh"
 cp release/requirements.txt "$DIST_DIR/requirements.txt"
-cp release/.env.local.example "$DIST_DIR/.env.local.example"
+cp .env.local.example "$DIST_DIR/.env.local.example"
 cp LICENSE "$DIST_DIR/LICENSE"
 
 cp release/resources/mertens.sh "$DIST_DIR/resources/mertens.sh"

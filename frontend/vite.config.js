@@ -5,10 +5,13 @@ import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
+const PROJECT_DIR = fileURLToPath(new URL('..', import.meta.url))
+
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
+  const env = loadEnv(mode, PROJECT_DIR, '')
 
   return {
+    envDir: PROJECT_DIR,
     plugins: [
       vue(),
       vueDevTools(),
