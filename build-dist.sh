@@ -46,8 +46,8 @@ cp release/requirements.txt "$DIST_DIR/requirements.txt"
 cp release/.env.local.example "$DIST_DIR/.env.local.example"
 cp LICENSE "$DIST_DIR/LICENSE"
 
-cp mertens.sh "$DIST_DIR/resources/mertens.sh"
-cp mertens.sh "$DIST_DIR/photos/mertens.sh"
+cp release/resources/mertens.sh "$DIST_DIR/resources/mertens.sh"
+cp release/resources/mertens.sh "$DIST_DIR/photos/mertens.sh"
 
 find "$DIST_DIR/backend" -type d -name '__pycache__' -prune -exec rm -rf {} +
 find "$DIST_DIR/backend" -type f -name '*.py[co]' -delete
