@@ -143,7 +143,7 @@ SATURATION_FACTOR=2
 
 The existing development workflow remains separate from the production release.
 
-The development Pi can continue to use `deploy.sh`, `runback.sh` and the
+The development Pi can continue to use `sync-dev.sh`, `runback.sh` and the
 existing `.venv`. This is intentionally independent of the release package.
 
 ### Development machine
@@ -179,7 +179,7 @@ python -m pip install fastapi==0.141.1 uvicorn==0.52.1 piexif==1.1.3
 For the normal development deployment to an existing Pi:
 
 ```bash
-./deploy.sh <pi-host>
+./sync-dev.sh <pi-host>
 ```
 
 This will put the files on the PI in the directory ~:/Deploy/Microscope-Picam2. You can run the backend

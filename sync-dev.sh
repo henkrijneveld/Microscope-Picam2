@@ -20,7 +20,7 @@ DEPLOY_DIR="${DEPLOY_DIR:-Deploy/Microscope-Picam2}"
 if [ -z "$PI_HOST" ]; then
   echo "PI_HOST is missing." >&2
   echo "For example, set PI_HOST=Raspi3B-1.local in $ENV_FILE" >&2
-  echo "or use: ./deploy.sh <pi-host>" >&2
+  echo "or use: ./sync-dev.sh <pi-host>" >&2
   exit 1
 fi
 

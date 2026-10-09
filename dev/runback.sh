@@ -17,7 +17,7 @@ fi
 
 if [ ! -f "$FRONTEND_DIST" ]; then
   echo "Frontend build is missing: frontend/dist/index.html" >&2
-  echo "Deploy the application again from the development machine using deploy.sh." >&2
+  echo "Deploy the application again from the development machine using sync-dev.sh." >&2
   exit 1
 fi
 
