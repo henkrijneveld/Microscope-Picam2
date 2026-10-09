@@ -181,3 +181,11 @@ For the normal development deployment to an existing Pi:
 ```bash
 ./deploy.sh <pi-host>
 ```
+
+This will put the files on the PI in the directory ~:/Deploy/Microscope-Picam2. You can run the backend
+with startcam.sh en stopcam.sh, or alternatively runback.sh, you will see the loglines flying by. Be aware,
+using runback.sh demands that the camera is stopped with stopcam.sh first.
+
+Debugging frontend: running the frontend on the development PC and the backend on the PI: Go to frontend subdir on the
+dev machine and execute runfront.sh. You can test on http://localhost:5173 on the dev. You will have some Vue tools
+on screen (small arrow centre under), because you use the VITE server now.
