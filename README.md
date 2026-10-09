@@ -1,5 +1,8 @@
 [English](README.md) | [Nederlands](README.nl.md)
 
+>[!NOTE]
+>The English version of the Readme is AI-translated from the original Dutch one.
+
 # Microscope-Picam2
 
 Package for using the HQ camera and a Raspberry Pi, specifically with a microscope. This is a new version of Microscope-Picam, now based on libcamera and Picamera2. The aim is to take photographs; video is not supported.
