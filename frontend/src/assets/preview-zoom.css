@@ -1,0 +1,41 @@
+#preview-panel {
+  position: relative;
+}
+
+#preview-panel img {
+  transform-origin: center center;
+  will-change: transform;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+#preview-panel.preview-zoomed img {
+  cursor: grab;
+  touch-action: none;
+}
+
+#preview-panel.preview-dragging img {
+  cursor: grabbing;
+}
+
+.preview-zoom-controls {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 5;
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--ui-border);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-background) 88%, transparent);
+}
+
+.preview-zoom-controls button {
+  min-width: 34px;
+}
+
+.preview-zoom-controls button[aria-pressed='true'] {
+  color: var(--ui-active-choice);
+  opacity: 1;
+}

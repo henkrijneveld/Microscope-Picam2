@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="nl">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MicroRasp</title>
+    <link rel="icon" type="image/png" href="/mannetje.png">
+    <link rel="stylesheet" href="/latest-photo.css">
+  </head>
+  <body>
+    <main id="latest-layout">
+      <header id="topbar">
+        <nav id="navigation-panel" aria-label="Main navigation">
+          <button id="camera-button" type="button"></button>
+          <button id="files-button" type="button"></button>
+          <button id="latest-button" class="active-choice" type="button" disabled></button>
+          <button id="shutdown-button" type="button"></button>
+        </nav>
+
+        <section id="system-status" aria-live="polite">
+          <span class="status-primary">MicroRasp</span>
+          <span class="status-detail"></span>
+        </section>
+
+        <div class="topbar-actions">
+          <div id="language-switch" class="language-switch" role="group" aria-label="Language">
+            <button id="language-nl" type="button">NL</button>
+            <button id="language-en" type="button">EN</button>
+          </div>
+          <img class="app-logo" src="/mannetje.png" alt="MicroRasp">
+        </div>
+      </header>
+
+      <section id="thumbnail-panel" aria-label="" hidden></section>
+
+      <section id="photo-panel" aria-label="">
+        <img id="main-photo" alt="" hidden>
+        <p id="empty-message"></p>
+      </section>
+    </main>
+
+    <script type="module" src="/latest-photo.js"></script>
+  </body>
+</html>
