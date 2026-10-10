@@ -223,3 +223,10 @@
     overflow: visible;
   }
 }
+
+/* Keep the browser-to-Pi round-trip visible when the status text is long. */
+#system-status .status-ping {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
