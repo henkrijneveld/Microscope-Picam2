@@ -10,6 +10,7 @@ const translations = {
     'aria.latestPhoto': 'Laatste foto',
 
     'navigation.camera': 'Camera',
+    'navigation.liveview': 'Liveview',
     'navigation.files': 'Bestanden',
     'navigation.latestPhoto': 'Laatste foto',
     'navigation.stopPi': 'Stop Pi',
@@ -20,6 +21,8 @@ const translations = {
     'common.error': 'fout',
 
     'status.cameraNotConnected': 'camera niet verbonden',
+    'status.ping': 'Ping',
+    'status.pingHint': 'Retourtijd van een HTTP-verzoek tussen browser en Pi (geen ICMP-ping)',
     'status.shuttingDown': 'Pi wordt afgesloten',
     'status.shutdownWait': 'Wacht tot de Pi volledig uit is voordat de voeding wordt losgenomen.',
     'status.shutdownError': 'Afsluitfout',
@@ -39,6 +42,7 @@ const translations = {
     'aria.latestPhoto': 'Latest photo',
 
     'navigation.camera': 'Camera',
+    'navigation.liveview': 'Live view',
     'navigation.files': 'Files',
     'navigation.latestPhoto': 'Latest photo',
     'navigation.stopPi': 'Shut down Pi',
@@ -49,6 +53,8 @@ const translations = {
     'common.error': 'error',
 
     'status.cameraNotConnected': 'camera not connected',
+    'status.ping': 'Ping',
+    'status.pingHint': 'HTTP round-trip time between browser and Pi (not an ICMP ping)',
     'status.shuttingDown': 'Pi is shutting down',
     'status.shutdownWait': 'Wait until the Pi is fully shut down before disconnecting the power.',
     'status.shutdownError': 'Shutdown error',
