@@ -61,7 +61,7 @@ function renderSystemStatus() {
   if (!statusResult.camera?.connected) {
     setSystemStatus(
       `MicroRasp: ${t('common.error')}`,
-      t('status.cameraNotConnected'),
+      [t('status.cameraNotConnected'), statusResult.camera?.error].filter(Boolean).join(' · '),
     )
     return
   }
