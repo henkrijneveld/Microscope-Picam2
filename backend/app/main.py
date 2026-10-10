@@ -112,6 +112,9 @@ class StreamingOutput(io.BufferedIOBase):
 picam2: Picamera2 | None = None
 camera_error: str | None = None
 output = StreamingOutput()
+stream_stats_lock = Lock()
+stream_clients = {}
+stream_client_next_id = 0
 stream_stop = Event()
 camera_lock = Lock()
 metadata_lock = Lock()
@@ -525,6 +528,8 @@ def stream_stats():
         latest = output.frame_times[-1] if output.frame_times else None
 
     span = times[-1] - times[0] if len(times) >= 2 else 0
+    with stream_stats_lock:
+        clients = [dict(client) for client in stream_clients.values()]
     return {
         "target_fps": frame_rate,
         "encoded_fps": round((len(times) - 1) / span, 1) if span > 0 else 0,
@@ -532,36 +537,57 @@ def stream_stats():
         "average_jpeg_kb": round(total_bytes / len(recent) / 1000, 1) if recent else 0,
         "estimated_mb_per_second": round(total_bytes / span / 1_000_000, 2) if span > 0 else 0,
         "last_frame_age_ms": round((now - latest) * 1000) if latest is not None else None,
+        "active_stream_clients": len(clients),
+        "stream_clients": clients,
     }
 
 
 def generate_mjpeg():
+    global stream_client_next_id
+
+    with stream_stats_lock:
+        stream_client_next_id += 1
+        client_id = stream_client_next_id
+        stream_clients[client_id] = {
+            "id": client_id, "frames": 0, "skipped": 0,
+        }
+
     last_sequence = 0
-
-    while not stream_stop.is_set():
-        with output.condition:
-            output.condition.wait_for(
-                lambda: stream_stop.is_set()
-                or (
-                    output.frame is not None
-                    and output.sequence != last_sequence
+    try:
+        while not stream_stop.is_set():
+            with output.condition:
+                output.condition.wait_for(
+                    lambda: stream_stop.is_set()
+                    or (
+                        output.frame is not None
+                        and output.sequence != last_sequence
+                    )
                 )
+
+                if stream_stop.is_set():
+                    return
+
+                frame = output.frame
+                sequence = output.sequence
+
+            skipped = max(0, sequence - last_sequence - 1) if last_sequence else 0
+            last_sequence = sequence
+            with stream_stats_lock:
+                client = stream_clients[client_id]
+                client["frames"] += 1
+                client["skipped"] += skipped
+
+            yield (
+                b"--FRAME\r\n"
+                b"Content-Type: image/jpeg\r\n"
+                b"Content-Length: " + str(len(frame)).encode() + b"\r\n"
+                b"\r\n"
+                + frame
+                + b"\r\n"
             )
-
-            if stream_stop.is_set():
-                return
-
-            frame = output.frame
-            last_sequence = output.sequence
-
-        yield (
-            b"--FRAME\r\n"
-            b"Content-Type: image/jpeg\r\n"
-            b"Content-Length: " + str(len(frame)).encode() + b"\r\n"
-            b"\r\n"
-            + frame
-            + b"\r\n"
-        )
+    finally:
+        with stream_stats_lock:
+            stream_clients.pop(client_id, None)
 
 
 @app.get("/api/stream")
