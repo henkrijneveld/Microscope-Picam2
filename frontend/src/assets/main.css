@@ -183,21 +183,33 @@ section.ui-panel p {
   grid-row: 1;
 }
 
-#files-layout::before {
-  content: attr(data-status-text);
+#files-system-status {
   grid-column: 2;
   grid-row: 1;
   min-width: 0;
   display: flex;
   align-items: center;
+  gap: 10px;
   padding: 4px 8px;
   border: 1px solid var(--ui-border);
   border-radius: 4px;
   background: var(--ui-panel);
-  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
+}
+
+#files-system-status .files-status-text {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+#files-system-status .status-ping {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
 }
 
 #files-layout > section.ui-panel {
