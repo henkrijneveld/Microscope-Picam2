@@ -46,6 +46,10 @@ export const translations = {
     'aria.rgbHistogram': 'RGB-histogram van het live camerabeeld',
 
     'navigation.camera': 'Camera',
+    'navigation.liveview': 'Liveview',
+    'liveview.width': 'Breedtevullend',
+    'liveview.height': 'Hoogtevullend',
+    'liveview.back': 'Terug naar Camera',
     'navigation.files': 'Bestanden',
     'navigation.latestPhoto': 'Laatste foto',
     'navigation.stopPi': 'Stop Pi',
@@ -128,6 +132,10 @@ export const translations = {
     'aria.rgbHistogram': 'RGB histogram of the live camera image',
 
     'navigation.camera': 'Camera',
+    'navigation.liveview': 'Live view',
+    'liveview.width': 'Fill width',
+    'liveview.height': 'Fill height',
+    'liveview.back': 'Back to Camera',
     'navigation.files': 'Files',
     'navigation.latestPhoto': 'Latest photo',
     'navigation.stopPi': 'Shut down Pi',
