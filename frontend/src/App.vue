@@ -14,6 +14,7 @@ let liveviewDragStart = null
 const status = ref(null)
 const error = ref(null)
 const previewImage = ref(null)
+const pingMs = ref(null)
 
 const exposure = ref(null)
 const framerate = ref(null)
@@ -45,6 +46,9 @@ const filesError = ref(null)
 let exposureTimer = null
 let whiteBalanceTimer = null
 let photoStatusTimer = null
+let pingTimer = null
+let pingAbortController = null
+let pingBusy = false
 let cameraControlVersion = 0
 let saturationControlVersion = 0
 
@@ -183,6 +187,44 @@ function parseFovValue() {
 
   const value = Number(text)
   return Number.isFinite(value) ? value : null
+}
+
+async function measurePing() {
+  if (pingBusy || shuttingDown.value || document.hidden) return
+
+  pingBusy = true
+  const controller = new AbortController()
+  pingAbortController = controller
+  const timeout = setTimeout(() => controller.abort(), 3000)
+  const start = performance.now()
+
+  try {
+    const response = await fetch('/api/ping', {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    pingMs.value = Math.round(performance.now() - start)
+  } catch (_) {
+    pingMs.value = null
+  } finally {
+    clearTimeout(timeout)
+    if (pingAbortController === controller) pingAbortController = null
+    pingBusy = false
+  }
+}
+
+function startPingPolling() {
+  if (pingTimer) return
+  measurePing()
+  pingTimer = setInterval(measurePing, 1000)
+}
+
+function stopPingPolling() {
+  if (pingTimer) clearInterval(pingTimer)
+  pingTimer = null
+  pingAbortController?.abort()
+  pingAbortController = null
 }
 
 function startCameraPolling() {
@@ -760,6 +802,7 @@ async function handlePageChange() {
 
 onMounted(async () => {
   window.addEventListener('hashchange', handlePageChange)
+  startPingPolling()
   await handlePageChange()
 })
 
@@ -767,6 +810,7 @@ onUnmounted(() => {
   window.removeEventListener('hashchange', handlePageChange)
   stopCameraPolling()
   stopPhotoStatusPolling()
+  stopPingPolling()
 })
 </script>
 
@@ -786,6 +830,9 @@ onUnmounted(() => {
       <button :disabled="liveviewMode === 'height'" @click="setLiveviewMode('height')">{{ t('liveview.height') }}</button>
       <button @click="leaveLiveview">{{ t('liveview.back') }}</button>
       <span class="liveview-fullscreen-hint">{{ t('liveview.fullscreenHint') }}</span>
+      <span class="liveview-fullscreen-hint" :title="t('status.pingHint')">
+        {{ t('status.ping') }}: {{ pingMs === null ? '—' : `${pingMs} ms` }}
+      </span>
     </div>
   </section>
   <main v-else-if="currentPage === 'camera'" id="camera-layout">
@@ -837,6 +884,9 @@ onUnmounted(() => {
           <span class="status-primary">MicroRasp</span>
           <span class="status-detail">{{ t('common.loadingStatus') }}</span>
         </template>
+        <span v-if="!shuttingDown" class="status-ping" :title="t('status.pingHint')">
+          {{ t('status.ping') }}: {{ pingMs === null ? '—' : `${pingMs} ms` }}
+        </span>
       </section>
 
       <div class="topbar-actions">
