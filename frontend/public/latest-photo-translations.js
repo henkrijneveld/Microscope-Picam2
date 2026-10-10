@@ -61,13 +61,30 @@ const translations = {
   },
 }
 
-let language = 'nl'
+function browserLanguage() {
+  const browserLanguages = navigator.languages?.length
+    ? navigator.languages
+    : [navigator.language]
+
+  for (const candidate of browserLanguages) {
+    const code = candidate?.split('-')[0]?.toLowerCase()
+    if (SUPPORTED_LANGUAGES.has(code)) {
+      return code
+    }
+  }
+
+  return 'nl'
+}
+
+let language = browserLanguage()
 
 try {
   const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY)
-  language = SUPPORTED_LANGUAGES.has(stored) ? stored : 'nl'
+  if (SUPPORTED_LANGUAGES.has(stored)) {
+    language = stored
+  }
 } catch (_) {
-  language = 'nl'
+  // Use browser language if storage is blocked.
 }
 
 export function getLanguage() {
