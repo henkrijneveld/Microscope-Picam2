@@ -1,4 +1,5 @@
 import io
+from collections import deque
 import json
 import os
 import re
@@ -96,11 +97,13 @@ class StreamingOutput(io.BufferedIOBase):
         self.frame = None
         self.sequence = 0
         self.condition = Condition()
+        self.frame_times = deque(maxlen=150)
 
     def write(self, buf):
         with self.condition:
             self.frame = buf
             self.sequence += 1
+            self.frame_times.append(monotonic())
             self.condition.notify_all()
 
 
@@ -443,6 +446,7 @@ async def lifespan(app: FastAPI):
         with output.condition:
             output.frame = None
             output.sequence = 0
+            output.frame_times.clear()
 
         picam2.start()
         start_stream_encoder()
@@ -504,6 +508,23 @@ def status():
             "ip_address": ip_address,
             "model": picam2.camera_properties.get("Model", "unknown"),
         },
+    }
+
+
+@app.get("/api/stream/stats")
+def stream_stats():
+    """Measure JPEG frames produced by the encoder over the last five seconds."""
+    now = monotonic()
+    with output.condition:
+        times = [t for t in output.frame_times if t >= now - 5.0]
+        latest = output.frame_times[-1] if output.frame_times else None
+
+    span = times[-1] - times[0] if len(times) >= 2 else 0
+    return {
+        "target_fps": frame_rate,
+        "encoded_fps": round((len(times) - 1) / span, 1) if span > 0 else 0,
+        "samples": len(times),
+        "last_frame_age_ms": round((now - latest) * 1000) if latest is not None else None,
     }
 
 
