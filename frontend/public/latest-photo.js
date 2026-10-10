@@ -7,6 +7,10 @@ const emptyMessage = document.getElementById('empty-message')
 const systemStatus = document.getElementById('system-status')
 const navigationPanel = document.getElementById('navigation-panel')
 const cameraButton = document.getElementById('camera-button')
+const liveviewButton = document.getElementById('liveview-button')
+const statusPrimary = systemStatus.querySelector('.status-primary')
+const statusDetail = systemStatus.querySelector('.status-detail')
+const pingElement = document.getElementById('status-ping')
 const filesButton = document.getElementById('files-button')
 const latestButton = document.getElementById('latest-button')
 const shutdownButton = document.getElementById('shutdown-button')
@@ -21,25 +25,40 @@ let statusError = null
 let shuttingDown = false
 let photoState = 'loading'
 let photoErrorMessage = ''
+let pingBusy = false
+let pingAbortController = null
+
+async function measurePing() {
+  if (pingBusy || shuttingDown || document.hidden) return
+  pingBusy = true
+  const controller = new AbortController()
+  pingAbortController = controller
+  const timeout = setTimeout(() => controller.abort(), 3000)
+  const start = performance.now()
+
+  try {
+    const response = await fetch('/api/ping', {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    pingElement.textContent = `${t('status.ping')}: ${Math.round(performance.now() - start)} ms`
+  } catch (_) {
+    pingElement.textContent = `${t('status.ping')}: —`
+  } finally {
+    clearTimeout(timeout)
+    if (pingAbortController === controller) pingAbortController = null
+    pingBusy = false
+  }
+}
 
 function fileUrl(filename) {
   return `/api/files/${encodeURIComponent(filename)}`
 }
 
 function setSystemStatus(primary, detail = '') {
-  systemStatus.innerHTML = ''
-
-  const primaryElement = document.createElement('span')
-  primaryElement.className = 'status-primary'
-  primaryElement.textContent = primary
-  systemStatus.appendChild(primaryElement)
-
-  if (detail) {
-    const detailElement = document.createElement('span')
-    detailElement.className = 'status-detail'
-    detailElement.textContent = detail
-    systemStatus.appendChild(detailElement)
-  }
+  statusPrimary.textContent = primary
+  statusDetail.textContent = detail
 }
 
 function renderSystemStatus() {
@@ -100,6 +119,9 @@ function applyLanguage() {
   photoPanel.setAttribute('aria-label', t('aria.latestPhoto'))
 
   cameraButton.textContent = t('navigation.camera')
+  liveviewButton.textContent = t('navigation.liveview')
+  pingElement.title = t('status.pingHint')
+  pingElement.textContent = pingElement.textContent.replace(/^.*?:/, `${t('status.ping')}:`)
   filesButton.textContent = t('navigation.files')
   latestButton.textContent = t('navigation.latestPhoto')
   shutdownButton.textContent = t('navigation.stopPi')
@@ -307,6 +329,10 @@ cameraButton.addEventListener('click', () => {
   window.location.href = '/'
 })
 
+liveviewButton.addEventListener('click', () => {
+  window.location.href = '/#liveview'
+})
+
 filesButton.addEventListener('click', () => {
   window.location.href = '/#files'
 })
@@ -324,11 +350,14 @@ languageEn.addEventListener('click', () => {
 })
 
 window.addEventListener('beforeunload', () => {
+  pingAbortController?.abort()
   for (const url of objectUrls.values()) {
     URL.revokeObjectURL(url)
   }
 })
 
 applyLanguage()
+measurePing()
+setInterval(measurePing, 1000)
 loadStatus()
 renderLatestPhoto()
