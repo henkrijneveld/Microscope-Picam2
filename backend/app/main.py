@@ -526,6 +526,9 @@ def generate_mjpeg():
 
 @app.get("/api/stream")
 def stream():
+    if picam2 is None:
+        raise HTTPException(status_code=503, detail=camera_error or "Camera not available")
+
     return StreamingResponse(
         generate_mjpeg(),
         media_type="multipart/x-mixed-replace; boundary=FRAME",
