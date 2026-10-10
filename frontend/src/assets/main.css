@@ -316,3 +316,25 @@ a {
 .liveview-height { height: 100%; width: auto; }
 .liveview-actions { position: absolute; z-index: 2; top: 12px; right: 12px; display: flex; gap: 6px; flex-wrap: wrap; padding: 6px; border-radius: 5px; background: rgb(0 0 0 / 65%); }
 .liveview-error { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; max-width: 90%; }
+
+/* Match the normal interface's active/available button distinction. */
+.liveview-actions button {
+  color: #111;
+  background: #f1f1f1;
+  border: 2px solid #777;
+  border-radius: 4px;
+  opacity: 1;
+}
+.liveview-actions button:disabled {
+  color: blue;
+  background: #fff;
+  border: 1px solid #aaa;
+  opacity: 1;
+  cursor: default;
+}
+.liveview-fullscreen-hint {
+  align-self: center;
+  color: #fff;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
