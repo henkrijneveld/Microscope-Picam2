@@ -785,6 +785,7 @@ onUnmounted(() => {
       <button :disabled="liveviewMode === 'width'" @click="setLiveviewMode('width')">{{ t('liveview.width') }}</button>
       <button :disabled="liveviewMode === 'height'" @click="setLiveviewMode('height')">{{ t('liveview.height') }}</button>
       <button @click="leaveLiveview">{{ t('liveview.back') }}</button>
+      <span class="liveview-fullscreen-hint">{{ t('liveview.fullscreenHint') }}</span>
     </div>
   </section>
   <main v-else-if="currentPage === 'camera'" id="camera-layout">
