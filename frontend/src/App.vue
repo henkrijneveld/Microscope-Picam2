@@ -785,10 +785,14 @@ onUnmounted(() => {
 
     <section id="preview-panel" :aria-label="t('aria.livePreview')">
       <img
+        v-if="status?.camera?.connected"
         ref="previewImage"
-        :src="'/api/stream'"
+        src="/api/stream"
         :alt="t('aria.liveCameraImage')"
       >
+      <p v-else-if="status && !status.camera.connected">
+        {{ t('status.cameraNotConnected') }}<template v-if="status.camera.error"> · {{ status.camera.error }}</template>
+      </p>
     </section>
 
     <aside id="controls-panel" :aria-label="t('aria.cameraSettings')">
