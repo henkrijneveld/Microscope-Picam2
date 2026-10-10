@@ -67,7 +67,6 @@ function renderSystemStatus() {
   }
 
   const detail = [
-    t('common.connected'),
     statusResult.camera.model || t('common.unknownModel'),
     statusResult.camera.hostname || '—',
     statusResult.camera.ip_address || '—',
