@@ -3,13 +3,32 @@ import { ref } from 'vue'
 const LANGUAGE_STORAGE_KEY = 'microrasp-language'
 const SUPPORTED_LANGUAGES = new Set(['nl', 'en'])
 
+function browserLanguage() {
+  const browserLanguages = navigator.languages?.length
+    ? navigator.languages
+    : [navigator.language]
+
+  for (const candidate of browserLanguages) {
+    const code = candidate?.split('-')[0]?.toLowerCase()
+    if (SUPPORTED_LANGUAGES.has(code)) {
+      return code
+    }
+  }
+
+  return 'nl'
+}
+
 function storedLanguage() {
   try {
     const value = localStorage.getItem(LANGUAGE_STORAGE_KEY)
-    return SUPPORTED_LANGUAGES.has(value) ? value : 'nl'
+    if (SUPPORTED_LANGUAGES.has(value)) {
+      return value
+    }
   } catch (_) {
-    return 'nl'
+    // Browser language remains available if storage is blocked.
   }
+
+  return browserLanguage()
 }
 
 export const language = ref(storedLanguage())
