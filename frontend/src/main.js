@@ -294,12 +294,15 @@ function ensureFilesPager() {
 }
 
 async function loadFilesSystemStatus(layout) {
+  const statusText = layout.querySelector('#files-system-status .files-status-text')
+  if (!statusText) return
+
   if (layout.dataset.statusLoading === 'true' || layout.dataset.statusLoaded === 'true') {
     return
   }
 
   layout.dataset.statusLoading = 'true'
-  layout.dataset.statusText = 'MicroRasp · ' + t('common.loadingStatus')
+  statusText.textContent = 'MicroRasp · ' + t('common.loadingStatus')
 
   try {
     const response = await nativeFetch('/api/status')
@@ -311,20 +314,19 @@ async function loadFilesSystemStatus(layout) {
     const result = await response.json()
 
     if (!result.camera?.connected) {
-      layout.dataset.statusText = 'MicroRasp: ' + t('common.error').toLowerCase()
+      statusText.textContent = 'MicroRasp: ' + t('common.error').toLowerCase()
         + ' · ' + t('status.cameraNotConnected')
       return
     }
 
-    layout.dataset.statusText = [
+    statusText.textContent = [
       'MicroRasp: ' + result.status,
-      t('common.connected'),
       result.camera.model || t('common.unknownModel'),
       result.camera.hostname || '—',
       result.camera.ip_address || '—',
     ].join(' · ')
   } catch (error) {
-    layout.dataset.statusText = 'MicroRasp: ' + t('common.error').toLowerCase()
+    statusText.textContent = 'MicroRasp: ' + t('common.error').toLowerCase()
       + ' · ' + error.message
   } finally {
     delete layout.dataset.statusLoading
