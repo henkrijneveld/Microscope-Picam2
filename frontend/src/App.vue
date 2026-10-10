@@ -869,12 +869,12 @@ onUnmounted(() => {
         <template v-else-if="status">
           <span class="status-primary">MicroRasp: {{ status.status }}</span>
           <span class="status-detail">
-            {{ status.camera.connected ? t('common.connected') : t('common.notConnected') }}
-            <template v-if="!status.camera.connected && status.camera.error">
-              · {{ status.camera.error }}
+            <template v-if="!status.camera.connected">
+              {{ t('common.notConnected') }}
+              <template v-if="status.camera.error"> · {{ status.camera.error }}</template>
             </template>
-            <template v-if="status.camera.connected">
-              · {{ status.camera.model || t('common.unknownModel') }}
+            <template v-else>
+              {{ status.camera.model || t('common.unknownModel') }}
               · {{ status.camera.hostname || '—' }}
               · {{ status.camera.ip_address || '—' }}
             </template>
