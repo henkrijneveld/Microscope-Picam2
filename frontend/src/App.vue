@@ -830,7 +830,8 @@ onUnmounted(() => {
       <button :disabled="liveviewMode === 'height'" @click="setLiveviewMode('height')">{{ t('liveview.height') }}</button>
       <button @click="leaveLiveview">{{ t('liveview.back') }}</button>
       <span class="liveview-fullscreen-hint">{{ t('liveview.fullscreenHint') }}</span>
-      <span class="liveview-fullscreen-hint" :title="t('status.pingHint')">
+      <span class="liveview-fullscreen-hint" aria-hidden="true">·</span>
+      <span class="liveview-fullscreen-hint liveview-ping" :title="t('status.pingHint')">
         {{ t('status.ping') }}: {{ pingMs === null ? '—' : `${pingMs} ms` }}
       </span>
     </div>
