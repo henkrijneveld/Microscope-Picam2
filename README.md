@@ -65,6 +65,8 @@ Saturation adjustment
 
 Histogram
 
+Liveview: next to the camera button the liveview. It will show the microscope view in the full browser window. 
+
 White balance. This can be either automatic or manual. In practice, automatic white balance does not work particularly well for microscope photographs. The best method is to place a white surface under the objective using the illumination that will be used, then press SETWB. In the histogram, the green, blue and red curves will usually move towards each other; the fine adjustment can then be used to place the blue and red curves over each other.
 
 At the top left there is a Files tab. This is a very rudimentary file browser from which image files can be downloaded. The software assumes that during normal use the photos directory will be accessed through a terminal or SFTP. Using SFTP requires SSH to be enabled on the Pi.

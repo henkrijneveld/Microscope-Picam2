@@ -70,6 +70,8 @@ Histogram
 
 Witbalans. Kan zowel automatisch als handmatig. De praktijk leert dat bij microscoopfoto's de automatische balans niet lekker werkt. De beste methode is een wit vlak onder het objectief te houden met de te gebruiken belichting. Dan op SETWB te drukken. Het histogram loopt den met groen, blauw en rood meestal naar elkaar toe, en dan met de fijnafstelling de blauwe en de rode curve in het histogram over elkaar te leggen. 
 
+Liveview: naast de camera de liveview. Hier wordt het live microscoopbeeld getoond 
+
 Linksboven een bestanden tab. Dit is een heel rudimentaire filebrowser waar beeldbestanden zijn te downloaden. De software gaat ervan uit de bij normaal gebruik via een terminal of SFTP de photos directory wordt benaderd. Gebruik SFTP vereist dat op de Pi SSH is ingeschakeld.
 
 Dan een tab laatste foto. Alle afbeeldingen / brackets van de laatste foto worden getoond om een indruk te geven
