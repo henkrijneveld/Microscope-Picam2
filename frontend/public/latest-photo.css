@@ -203,3 +203,17 @@ button.active-choice:disabled,
     height: 72px;
   }
 }
+
+/* Browser-to-Pi latency readout in the shared status bar. */
+#system-status .status-detail {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+#system-status .status-ping {
+  flex: 0 0 auto;
+  min-width: 12ch;
+  margin-left: auto;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
