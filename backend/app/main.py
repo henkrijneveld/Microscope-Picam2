@@ -493,6 +493,12 @@ app = FastAPI(
 )
 
 
+@app.get("/api/ping", status_code=204)
+def ping():
+    # Lightweight round-trip target for browser-side latency measurements.
+    return None
+
+
 @app.get("/api/status")
 def status():
     if picam2 is None:
