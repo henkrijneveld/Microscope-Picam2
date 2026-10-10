@@ -1193,6 +1193,7 @@ onUnmounted(() => {
       <button @click="showPage('camera')">
         Camera
       </button>
+      <button @click="openLiveview">{{ t('navigation.liveview') }}</button>
       <button disabled>
         {{ t('navigation.files') }}
       </button>
@@ -1203,6 +1204,13 @@ onUnmounted(() => {
         {{ shutdownBusy ? t('navigation.stoppingPi') : t('navigation.stopPi') }}
       </button>
     </nav>
+
+    <section id="files-system-status" aria-live="polite">
+      <span class="files-status-text">MicroRasp</span>
+      <span class="status-ping" :title="t('status.pingHint')">
+        {{ t('status.ping') }}: {{ pingMs === null ? '—' : `${pingMs} ms` }}
+      </span>
+    </section>
 
     <div class="topbar-actions">
       <div class="language-switch" role="group" :aria-label="t('aria.language')">
