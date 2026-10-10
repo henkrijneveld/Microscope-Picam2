@@ -338,3 +338,10 @@ a {
   font-size: 0.85rem;
   white-space: nowrap;
 }
+
+/* Reserve enough room for Ping: 9999 ms to avoid toolbar movement. */
+.liveview-ping {
+  min-width: 14ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
