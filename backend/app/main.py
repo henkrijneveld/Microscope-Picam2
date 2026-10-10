@@ -98,12 +98,14 @@ class StreamingOutput(io.BufferedIOBase):
         self.sequence = 0
         self.condition = Condition()
         self.frame_times = deque(maxlen=150)
+        self.frame_sizes = deque(maxlen=150)
 
     def write(self, buf):
         with self.condition:
             self.frame = buf
             self.sequence += 1
             self.frame_times.append(monotonic())
+            self.frame_sizes.append(len(buf))
             self.condition.notify_all()
 
 
@@ -447,6 +449,7 @@ async def lifespan(app: FastAPI):
             output.frame = None
             output.sequence = 0
             output.frame_times.clear()
+            output.frame_sizes.clear()
 
         picam2.start()
         start_stream_encoder()
@@ -516,7 +519,9 @@ def stream_stats():
     """Measure JPEG frames produced by the encoder over the last five seconds."""
     now = monotonic()
     with output.condition:
-        times = [t for t in output.frame_times if t >= now - 5.0]
+        recent = [(t, size) for t, size in zip(output.frame_times, output.frame_sizes) if t >= now - 5.0]
+        times = [t for t, _ in recent]
+        total_bytes = sum(size for _, size in recent)
         latest = output.frame_times[-1] if output.frame_times else None
 
     span = times[-1] - times[0] if len(times) >= 2 else 0
@@ -524,6 +529,8 @@ def stream_stats():
         "target_fps": frame_rate,
         "encoded_fps": round((len(times) - 1) / span, 1) if span > 0 else 0,
         "samples": len(times),
+        "average_jpeg_kb": round(total_bytes / len(recent) / 1000, 1) if recent else 0,
+        "estimated_mb_per_second": round(total_bytes / span / 1_000_000, 2) if span > 0 else 0,
         "last_frame_age_ms": round((now - latest) * 1000) if latest is not None else None,
     }
 
