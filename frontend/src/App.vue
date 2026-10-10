@@ -1,11 +1,15 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import NumberStepper from './components/NumberStepper.vue'
 import RgbHistogram from './components/RgbHistogram.vue'
 import mannetjeUrl from '../mannetje.png'
 import { language, setLanguage, t } from './translations.js'
 
-const currentPage = ref(window.location.hash === '#files' ? 'files' : 'camera')
+const currentPage = ref(window.location.hash === '#files' ? 'files' : window.location.hash === '#liveview' ? 'liveview' : 'camera')
+const liveviewPanel = ref(null)
+const liveviewMode = ref('width')
+const liveviewOffset = ref({ x: 0, y: 0 })
+let liveviewDragStart = null
 
 const status = ref(null)
 const error = ref(null)
@@ -119,6 +123,48 @@ function formatAebEv(ev) {
 function fileDownloadUrl(filename) {
   return `/api/files/${encodeURIComponent(filename)}`
 }
+
+async function openLiveview() {
+  window.location.hash = 'liveview'
+  await nextTick()
+  try {
+    await liveviewPanel.value?.requestFullscreen?.()
+  } catch (_) {
+    // Browsers may deny fullscreen; the full-viewport view still works.
+  }
+}
+
+async function leaveLiveview() {
+  if (document.fullscreenElement) {
+    try { await document.exitFullscreen() } catch (_) { /* Return anyway. */ }
+  }
+  window.location.hash = ''
+}
+
+function setLiveviewMode(mode) {
+  liveviewMode.value = mode
+  liveviewOffset.value = { x: 0, y: 0 }
+}
+
+function startLiveviewDrag(event) {
+  if (event.button !== 0 || !status.value?.camera?.connected) return
+  liveviewDragStart = { x: event.clientX, y: event.clientY, xOffset: liveviewOffset.value.x, yOffset: liveviewOffset.value.y }
+  event.currentTarget.setPointerCapture(event.pointerId)
+}
+
+function moveLiveviewDrag(event) {
+  if (!liveviewDragStart || !liveviewPanel.value) return
+  const rect = liveviewPanel.value.getBoundingClientRect()
+  const scale = liveviewMode.value === 'width' ? rect.width / 640 : rect.height / 480
+  const maxX = Math.max(0, (640 * scale - rect.width) / 2)
+  const maxY = Math.max(0, (480 * scale - rect.height) / 2)
+  liveviewOffset.value = {
+    x: Math.max(-maxX, Math.min(maxX, liveviewDragStart.xOffset + event.clientX - liveviewDragStart.x)),
+    y: Math.max(-maxY, Math.min(maxY, liveviewDragStart.yOffset + event.clientY - liveviewDragStart.y)),
+  }
+}
+
+function endLiveviewDrag() { liveviewDragStart = null }
 
 function showPage(page) {
   window.location.hash = page === 'files' ? 'files' : ''
@@ -695,7 +741,13 @@ async function loadCameraPage() {
 }
 
 async function handlePageChange() {
-  currentPage.value = window.location.hash === '#files' ? 'files' : 'camera'
+  currentPage.value = window.location.hash === '#files' ? 'files' : window.location.hash === '#liveview' ? 'liveview' : 'camera'
+
+  if (currentPage.value === 'liveview') {
+    stopCameraPolling()
+    if (!status.value) await loadCameraPage()
+    return
+  }
 
   if (currentPage.value === 'files') {
     stopCameraPolling()
@@ -719,12 +771,29 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <main v-if="currentPage === 'camera'" id="camera-layout">
+  <section v-if="currentPage === 'liveview'" ref="liveviewPanel" id="liveview-panel" :aria-label="t('navigation.liveview')">
+    <div class="liveview-image-area"
+      @pointerdown="startLiveviewDrag" @pointermove="moveLiveviewDrag"
+      @pointerup="endLiveviewDrag" @pointercancel="endLiveviewDrag" @lostpointercapture="endLiveviewDrag">
+      <img v-if="status?.camera?.connected" class="liveview-image"
+        :class="'liveview-' + liveviewMode"
+        :style="{ transform: 'translate(calc(-50% + ' + liveviewOffset.x + 'px), calc(-50% + ' + liveviewOffset.y + 'px))' }"
+        :src="'/api/stream'" :alt="t('aria.liveCameraImage')" draggable="false">
+      <p v-else class="liveview-error">{{ status?.camera?.error || t('status.cameraNotConnected') }}</p>
+    </div>
+    <div class="liveview-actions">
+      <button :disabled="liveviewMode === 'width'" @click="setLiveviewMode('width')">{{ t('liveview.width') }}</button>
+      <button :disabled="liveviewMode === 'height'" @click="setLiveviewMode('height')">{{ t('liveview.height') }}</button>
+      <button @click="leaveLiveview">{{ t('liveview.back') }}</button>
+    </div>
+  </section>
+  <main v-else-if="currentPage === 'camera'" id="camera-layout">
     <header id="topbar">
       <nav id="navigation-panel" :aria-label="t('aria.mainNavigation')">
         <button disabled>
           {{ t('navigation.camera') }}
         </button>
+        <button @click="openLiveview">{{ t('navigation.liveview') }}</button>
         <button @click="showPage('files')">
           {{ t('navigation.files') }}
         </button>
