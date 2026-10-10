@@ -74,6 +74,8 @@ export const translations = {
     'status.shutdownError': 'Afsluitfout',
     'status.cameraError': 'Camerafout',
     'status.cameraNotConnected': 'camera niet verbonden',
+    'status.ping': 'Ping (HTTP)',
+    'status.pingHint': 'Retourtijd van een HTTP-verzoek tussen browser en Pi (geen ICMP-ping)',
 
     'frameRate.title': 'Framesnelheid',
     'frameRate.current': 'Huidig',
@@ -161,6 +163,8 @@ export const translations = {
     'status.shutdownError': 'Shutdown error',
     'status.cameraError': 'Camera error',
     'status.cameraNotConnected': 'camera not connected',
+    'status.ping': 'Ping (HTTP)',
+    'status.pingHint': 'HTTP round-trip time between browser and Pi (not an ICMP ping)',
 
     'frameRate.title': 'Frame rate',
     'frameRate.current': 'Current',
