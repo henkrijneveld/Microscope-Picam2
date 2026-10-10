@@ -787,7 +787,7 @@ onUnmounted(() => {
       <img
         v-if="status?.camera?.connected"
         ref="previewImage"
-        src="/api/stream"
+        :src="'/api/stream'"
         :alt="t('aria.liveCameraImage')"
       >
       <p v-else-if="status && !status.camera.connected">
