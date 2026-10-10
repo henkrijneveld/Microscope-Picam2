@@ -339,9 +339,19 @@ a {
   white-space: nowrap;
 }
 
-/* Reserve enough room for Ping: 9999 ms to avoid toolbar movement. */
+/* Independent status readout in the bottom-right of Liveview. */
 .liveview-ping {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
   min-width: 14ch;
+  padding: 6px 10px;
+  border-radius: 5px;
+  background: rgb(0 0 0 / 65%);
+  color: #fff;
+  font-size: 0.85rem;
+  white-space: nowrap;
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
