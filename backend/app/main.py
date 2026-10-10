@@ -22,7 +22,7 @@ from picamera2.outputs import FileOutput
 from pydantic import BaseModel
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-LIVE_SIZE = (640, 480)
+LIVE_SIZE = (1280, 960)
 LIVE_SENSOR_SIZE = (2028, 1520)
 PHOTO_DIR = PROJECT_DIR / "photos"
 FRONTEND_DIST = PROJECT_DIR / "frontend" / "dist"
