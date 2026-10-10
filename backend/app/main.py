@@ -440,8 +440,20 @@ async def lifespan(app: FastAPI):
             "AwbEnable": True,
             "Saturation": saturation_value,
         })
+        with output.condition:
+            output.frame = None
+            output.sequence = 0
+
         picam2.start()
         start_stream_encoder()
+
+        with output.condition:
+            frame_received = output.condition.wait_for(
+                lambda: output.sequence > 0,
+                timeout=10.0,
+            )
+        if not frame_received:
+            raise RuntimeError("No camera frames received within 10 seconds")
 
         camera_error = None
 
